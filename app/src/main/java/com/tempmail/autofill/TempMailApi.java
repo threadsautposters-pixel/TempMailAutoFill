@@ -3,22 +3,35 @@ package com.tempmail.autofill;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import java.io.IOException;
-import java.util.Random;
-import java.util.concurrent.TimeUnit;
 
-import okhttp3.*;
+import java.io.IOException;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class TempMailApi {
-    private static final String[] SERVICES = {
-        "https://10minutemail.com/",
-        "https://temp-mail.org/en/10minutemail",
-        "https://www.minuteinbox.com/"
-    };
+    private static final String BASE_URL = "https://api.mail.tm";
+    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private static final Pattern KEYWORD_CODE_PATTERN = Pattern.compile(
+            "(?:code|otp|verification|verify|pin|passcode)[^0-9]{0,24}([0-9]{4,8})",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern NUMERIC_CODE_PATTERN = Pattern.compile("\\b([0-9]{4,8})\\b");
 
     private String currentEmail;
-    private String currentUrl;
-    private OkHttpClient client;
+    private String currentProvider = "Mail.tm";
+    private String currentPassword;
+    private String currentToken;
+    private String currentAccountId;
+    private String lastMessageId;
+    private final OkHttpClient client;
 
     public TempMailApi() {
         client = new OkHttpClient.Builder()
@@ -28,112 +41,220 @@ public class TempMailApi {
     }
 
     public String generateNewEmail() throws IOException {
-        Random rand = new Random();
-        String service = SERVICES[rand.nextInt(SERVICES.length)];
-        currentUrl = service;
+        JSONArray domains = fetchDomains();
+        if (domains.length() == 0) {
+            throw new IOException("No active mailbox domains available");
+        }
 
-        if (service.contains("10minutemail.com")) {
-            Request request = new Request.Builder()
-                    .url("https://10minutemail.com/10MinuteMail/resources/mailbox")
-                    .get()
-                    .build();
-            Response response = client.newCall(request).execute();
-            if (response.isSuccessful() && response.body() != null) {
-                try {
-                    String json = response.body().string();
-                    JSONObject obj = new JSONObject(json);
-                    currentEmail = obj.optString("email", "");
-                    if (!currentEmail.isEmpty()) return currentEmail;
-                } catch (JSONException e) {
-                    // ignore, fallback
+        String domain = null;
+        for (int i = 0; i < domains.length(); i++) {
+            JSONObject item = domains.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            if (item.optBoolean("isActive", true)) {
+                domain = item.optString("domain", "");
+                if (!domain.isEmpty()) {
+                    break;
                 }
             }
-            currentEmail = "temp" + System.currentTimeMillis() + "@10minutemail.com";
-            return currentEmail;
         }
 
-        if (service.contains("temp-mail.org")) {
-            String[] domains = {"@temp-mail.org", "@tempmail.com", "@10minutemail.net"};
-            currentEmail = "user" + System.currentTimeMillis() + domains[rand.nextInt(domains.length)];
-            return currentEmail;
+        if (domain == null || domain.isEmpty()) {
+            throw new IOException("No usable mailbox domain returned");
         }
 
-        if (service.contains("minuteinbox.com")) {
-            Request request = new Request.Builder()
-                    .url("https://www.minuteinbox.com/")
-                    .get()
-                    .build();
-            Response response = client.newCall(request).execute();
-            if (response.isSuccessful() && response.body() != null) {
-                String html = response.body().string();
-                int start = html.indexOf("<span id=\"email\">");
-                if (start != -1) {
-                    start += 16;
-                    int end = html.indexOf("</span>", start);
-                    if (end != -1) {
-                        currentEmail = html.substring(start, end).trim();
-                        return currentEmail;
-                    }
-                }
+        IOException lastError = null;
+        for (int attempt = 0; attempt < 4; attempt++) {
+            String localPart = "tm" + System.currentTimeMillis() + attempt;
+            String address = localPart + "@" + domain;
+            String password = "pw" + System.nanoTime() + "A!";
+            try {
+                createAccount(address, password);
+                currentEmail = address;
+                currentPassword = password;
+                currentToken = fetchToken(address, password);
+                currentAccountId = fetchAccountId();
+                lastMessageId = null;
+                currentProvider = "Mail.tm";
+                return currentEmail;
+            } catch (IOException e) {
+                lastError = e;
             }
-            currentEmail = "temp" + System.currentTimeMillis() + "@minuteinbox.com";
-            return currentEmail;
         }
 
-        currentEmail = "fallback" + System.currentTimeMillis() + "@dropmail.me";
-        return currentEmail;
+        throw lastError != null ? lastError : new IOException("Failed to create mailbox account");
     }
 
     public String fetchVerificationCode() throws IOException {
-        if (currentUrl == null) return null;
-
-        if (currentUrl.contains("10minutemail.com")) {
-            Request request = new Request.Builder()
-                    .url("https://10minutemail.com/10MinuteMail/resources/mailbox")
-                    .get()
-                    .build();
-            Response response = client.newCall(request).execute();
-            if (response.isSuccessful() && response.body() != null) {
-                try {
-                    String json = response.body().string();
-                    JSONObject obj = new JSONObject(json);
-                    JSONArray messages = obj.optJSONArray("messages");
-                    if (messages != null && messages.length() > 0) {
-                        JSONObject firstMsg = messages.getJSONObject(0);
-                        String subject = firstMsg.optString("subject", "");
-                        String body = firstMsg.optString("body", "");
-                        String digits = (subject + " " + body).replaceAll("[^0-9]", " ").trim();
-                        if (digits.length() >= 4) {
-                            return digits.substring(0, Math.min(8, digits.length()));
-                        }
-                    }
-                } catch (JSONException e) {
-                    // ignore
-                }
-            }
-        }
-
-        if (currentUrl.contains("temp-mail.org")) {
-            // TODO: implement real API when needed
+        if (currentToken == null || currentToken.isEmpty()) {
             return null;
         }
 
-        if (currentUrl.contains("minuteinbox.com")) {
-            Request request = new Request.Builder()
-                    .url("https://www.minuteinbox.com/")
-                    .get()
-                    .build();
-            Response response = client.newCall(request).execute();
-            if (response.isSuccessful() && response.body() != null) {
-                String html = response.body().string();
-                String digits = html.replaceAll("[^0-9]", " ").trim();
-                if (digits.length() >= 4) {
-                    return digits.substring(0, Math.min(8, digits.length()));
-                }
+        JSONObject inbox = getJson("/messages", true);
+        JSONArray messages = inbox.optJSONArray("hydra:member");
+        if (messages == null || messages.length() == 0) {
+            return null;
+        }
+
+        for (int i = 0; i < messages.length(); i++) {
+            JSONObject message = messages.optJSONObject(i);
+            if (message == null) {
+                continue;
+            }
+
+            String messageId = message.optString("id", "");
+            if (messageId.isEmpty() || messageId.equals(lastMessageId)) {
+                continue;
+            }
+
+            JSONObject detail = getJson("/messages/" + messageId, true);
+            String code = extractVerificationCode(detail);
+            if (code != null) {
+                lastMessageId = messageId;
+                return code;
             }
         }
 
         return null;
+    }
+
+    private JSONArray fetchDomains() throws IOException {
+        JSONObject response = getJson("/domains", false);
+        JSONArray items = response.optJSONArray("hydra:member");
+        return items != null ? items : new JSONArray();
+    }
+
+    private void createAccount(String address, String password) throws IOException {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("address", address);
+            payload.put("password", password);
+        } catch (JSONException e) {
+            throw new IOException("Failed to build account payload", e);
+        }
+
+        postJson("/accounts", payload, false);
+    }
+
+    private String fetchToken(String address, String password) throws IOException {
+        JSONObject payload = new JSONObject();
+        try {
+            payload.put("address", address);
+            payload.put("password", password);
+        } catch (JSONException e) {
+            throw new IOException("Failed to build token payload", e);
+        }
+
+        JSONObject response = postJson("/token", payload, false);
+        String token = response.optString("token", "");
+        if (token.isEmpty()) {
+            throw new IOException("Mailbox token was empty");
+        }
+        return token;
+    }
+
+    private String fetchAccountId() throws IOException {
+        JSONObject account = getJson("/me", true);
+        String id = account.optString("id", "");
+        if (id.isEmpty()) {
+            throw new IOException("Mailbox account id missing");
+        }
+        return id;
+    }
+
+    private JSONObject getJson(String path, boolean authenticated) throws IOException {
+        Request.Builder builder = new Request.Builder()
+                .url(BASE_URL + path)
+                .get()
+                .header("Accept", "application/json");
+        if (authenticated) {
+            builder.header("Authorization", "Bearer " + currentToken);
+        }
+
+        try (Response response = client.newCall(builder.build()).execute()) {
+            String body = response.body() != null ? response.body().string() : "";
+            if (!response.isSuccessful()) {
+                throw new IOException("GET " + path + " failed: " + response.code() + " " + body);
+            }
+            try {
+                return new JSONObject(body);
+            } catch (JSONException e) {
+                throw new IOException("Invalid JSON from " + path, e);
+            }
+        }
+    }
+
+    private JSONObject postJson(String path, JSONObject payload, boolean authenticated) throws IOException {
+        RequestBody body = RequestBody.create(payload.toString(), JSON);
+        Request.Builder builder = new Request.Builder()
+                .url(BASE_URL + path)
+                .post(body)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json");
+        if (authenticated) {
+            builder.header("Authorization", "Bearer " + currentToken);
+        }
+
+        try (Response response = client.newCall(builder.build()).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+            if (!response.isSuccessful()) {
+                throw new IOException("POST " + path + " failed: " + response.code() + " " + responseBody);
+            }
+            try {
+                return responseBody.isEmpty() ? new JSONObject() : new JSONObject(responseBody);
+            } catch (JSONException e) {
+                throw new IOException("Invalid JSON from " + path, e);
+            }
+        }
+    }
+
+    private String extractVerificationCode(JSONObject detail) {
+        StringBuilder content = new StringBuilder();
+        appendIfPresent(content, detail.optString("subject", ""));
+        appendIfPresent(content, detail.optString("intro", ""));
+        appendIfPresent(content, detail.optString("text", ""));
+
+        JSONArray htmlBodies = detail.optJSONArray("html");
+        if (htmlBodies != null) {
+            for (int i = 0; i < htmlBodies.length(); i++) {
+                appendIfPresent(content, htmlBodies.optString(i, ""));
+            }
+        }
+
+        String normalized = content.toString()
+                .replace("&nbsp;", " ")
+                .replaceAll("<[^>]+>", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        Matcher keywordMatcher = KEYWORD_CODE_PATTERN.matcher(normalized);
+        if (keywordMatcher.find()) {
+            return keywordMatcher.group(1);
+        }
+
+        Matcher numericMatcher = NUMERIC_CODE_PATTERN.matcher(normalized);
+        while (numericMatcher.find()) {
+            String candidate = numericMatcher.group(1);
+            if (candidate != null && candidate.length() >= 4 && candidate.length() <= 8) {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private void appendIfPresent(StringBuilder builder, String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append(' ');
+        }
+        builder.append(value.trim());
     }
 
     public String getCurrentEmail() {
@@ -141,18 +262,9 @@ public class TempMailApi {
     }
 
     public String getCurrentProviderName() {
-        if (currentUrl == null || currentUrl.isEmpty()) {
+        if (currentProvider == null || currentProvider.isEmpty()) {
             return "Unknown provider";
         }
-        if (currentUrl.contains("10minutemail.com")) {
-            return "10 Minute Mail";
-        }
-        if (currentUrl.contains("temp-mail.org")) {
-            return "Temp-Mail";
-        }
-        if (currentUrl.contains("minuteinbox.com")) {
-            return "MinuteInbox";
-        }
-        return currentUrl;
+        return currentProvider;
     }
 }
