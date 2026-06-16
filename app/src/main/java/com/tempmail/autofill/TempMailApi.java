@@ -139,4 +139,20 @@ public class TempMailApi {
     public String getCurrentEmail() {
         return currentEmail;
     }
+
+    public String getCurrentProviderName() {
+        if (currentUrl == null || currentUrl.isEmpty()) {
+            return "Unknown provider";
+        }
+        if (currentUrl.contains("10minutemail.com")) {
+            return "10 Minute Mail";
+        }
+        if (currentUrl.contains("temp-mail.org")) {
+            return "Temp-Mail";
+        }
+        if (currentUrl.contains("minuteinbox.com")) {
+            return "MinuteInbox";
+        }
+        return currentUrl;
+    }
 }

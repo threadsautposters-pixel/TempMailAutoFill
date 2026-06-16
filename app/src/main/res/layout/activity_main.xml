@@ -194,6 +194,37 @@
                         android:textSize="14sp"
                         android:textStyle="bold" />
                 </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="14dp"
+                    android:layout_marginBottom="14dp"
+                    android:background="@color/color_divider" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/label_stability"
+                        android:textColor="@color/color_text_secondary"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/stability_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/value_stability"
+                        android:textColor="@color/color_success"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -239,6 +270,33 @@
                     android:textColor="@color/color_text_primary"
                     android:textSize="15sp" />
 
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_copy_email"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/button_copy_email" />
+
+                    <View
+                        android:layout_width="12dp"
+                        android:layout_height="1dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_copy_code"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/button_copy_code" />
+                </LinearLayout>
+
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -254,6 +312,24 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
                     android:text="@string/placeholder_code"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:text="@string/label_provider"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/provider_value"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/placeholder_provider"
                     android:textColor="@color/color_text_primary"
                     android:textSize="15sp" />
 
@@ -344,6 +420,77 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
                     android:text="@string/button_test" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="@color/color_surface"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="0dp"
+            app:strokeColor="@color/color_divider"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/card_history_title"
+                            android:textColor="@color/color_text_primary"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="@string/card_history_subtitle"
+                            android:textColor="@color/color_text_secondary"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_clear_history"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/button_clear_history" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/history_empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:text="@string/history_empty"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="14sp" />
+
+                <LinearLayout
+                    android:id="@+id/history_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:orientation="vertical" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
