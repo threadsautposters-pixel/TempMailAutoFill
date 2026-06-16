@@ -16,7 +16,8 @@ public class AutoFillService extends AccessibilityService {
         int eventType = event.getEventType();
         if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                 && eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-                && eventType != AccessibilityEvent.TYPE_VIEW_FOCUSED) {
+                && eventType != AccessibilityEvent.TYPE_VIEW_FOCUSED
+                && eventType != AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED) {
             return;
         }
 
@@ -32,28 +33,18 @@ public class AutoFillService extends AccessibilityService {
 
         String email = prefs.getString("latest_email", null);
         String code = prefs.getString("latest_code", null);
+
+        AccessibilityNodeInfo focusedNode = findBestTargetNode(root, event.getSource());
+        if (tryFillNode(focusedNode, email, code)) {
+            return;
+        }
+
         List<AccessibilityNodeInfo> fields = new ArrayList<>();
         collectEditableNodes(root, fields);
 
         for (AccessibilityNodeInfo node : fields) {
-            if (node == null || !node.isEditable() || !node.isEnabled()) {
-                continue;
-            }
-
-            CharSequence existingText = node.getText();
-            if (existingText != null && existingText.length() > 0) {
-                continue;
-            }
-
-            String signature = buildFieldSignature(node);
-            if (signature.isEmpty()) {
-                continue;
-            }
-
-            if (shouldFillEmail(signature) && email != null && !email.isEmpty()) {
-                fillNode(node, email);
-            } else if (shouldFillCode(signature) && code != null && !code.isEmpty()) {
-                fillNode(node, code);
+            if (tryFillNode(node, email, code)) {
+                return;
             }
         }
     }
@@ -66,13 +57,35 @@ public class AutoFillService extends AccessibilityService {
             return;
         }
 
-        if (node.isEditable()) {
+        if (isEditableField(node)) {
             fields.add(node);
         }
 
         for (int i = 0; i < node.getChildCount(); i++) {
             collectEditableNodes(node.getChild(i), fields);
         }
+    }
+
+    private AccessibilityNodeInfo findBestTargetNode(AccessibilityNodeInfo root, AccessibilityNodeInfo source) {
+        if (isEditableField(source)) {
+            return source;
+        }
+
+        AccessibilityNodeInfo focusedInput = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        if (isEditableField(focusedInput)) {
+            return focusedInput;
+        }
+
+        AccessibilityNodeInfo focusedAccessibility = root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY);
+        if (isEditableField(focusedAccessibility)) {
+            return focusedAccessibility;
+        }
+
+        return null;
+    }
+
+    private boolean isEditableField(AccessibilityNodeInfo node) {
+        return node != null && node.isEnabled() && node.isEditable();
     }
 
     private String buildFieldSignature(AccessibilityNodeInfo node) {
@@ -114,10 +127,40 @@ public class AutoFillService extends AccessibilityService {
                 || signature.contains("passcode");
     }
 
-    private void fillNode(AccessibilityNodeInfo node, String value) {
+    private boolean tryFillNode(AccessibilityNodeInfo node, String email, String code) {
+        if (!isEditableField(node)) {
+            return false;
+        }
+
+        String signature = buildFieldSignature(node);
+        if (signature.isEmpty()) {
+            return false;
+        }
+
+        CharSequence existingText = node.getText();
+        String currentValue = existingText == null ? "" : existingText.toString().trim();
+
+        if (shouldFillEmail(signature) && email != null && !email.isEmpty()) {
+            if (!currentValue.isEmpty()) {
+                return false;
+            }
+            return fillNode(node, email);
+        }
+
+        if (shouldFillCode(signature) && code != null && !code.isEmpty()) {
+            if (code.equals(currentValue)) {
+                return false;
+            }
+            return fillNode(node, code);
+        }
+
+        return false;
+    }
+
+    private boolean fillNode(AccessibilityNodeInfo node, String value) {
         Bundle args = new Bundle();
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
         node.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
-        node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
     }
 }

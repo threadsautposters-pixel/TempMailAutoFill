@@ -3,9 +3,9 @@ package com.tempmail.autofill;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.jsoup.Jsoup;
 
 import java.io.IOException;
-import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,6 +21,10 @@ public class TempMailApi {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final Pattern KEYWORD_CODE_PATTERN = Pattern.compile(
             "(?:code|otp|verification|verify|pin|passcode)[^0-9]{0,24}([0-9]{4,8})",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern ALPHANUMERIC_KEYWORD_CODE_PATTERN = Pattern.compile(
+            "(?:code|otp|verification|verify|pin|passcode)[^a-z0-9]{0,24}([a-z0-9-]{4,12})",
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern NUMERIC_CODE_PATTERN = Pattern.compile("\\b([0-9]{4,8})\\b");
@@ -110,6 +114,9 @@ public class TempMailApi {
 
             JSONObject detail = getJson("/messages/" + messageId, true);
             String code = extractVerificationCode(detail);
+            if (code == null) {
+                code = extractVerificationCode(fetchDownloadedMessage(messageId));
+            }
             if (code != null) {
                 lastMessageId = messageId;
                 return code;
@@ -167,7 +174,8 @@ public class TempMailApi {
         Request.Builder builder = new Request.Builder()
                 .url(BASE_URL + path)
                 .get()
-                .header("Accept", "application/json");
+                .header("Accept", "application/json")
+                .header("User-Agent", "TempMailAutoFill/1.3");
         if (authenticated) {
             builder.header("Authorization", "Bearer " + currentToken);
         }
@@ -191,7 +199,8 @@ public class TempMailApi {
                 .url(BASE_URL + path)
                 .post(body)
                 .header("Accept", "application/json")
-                .header("Content-Type", "application/json");
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "TempMailAutoFill/1.3");
         if (authenticated) {
             builder.header("Authorization", "Bearer " + currentToken);
         }
@@ -209,6 +218,54 @@ public class TempMailApi {
         }
     }
 
+    private String fetchDownloadedMessage(String messageId) throws IOException {
+        Request request = new Request.Builder()
+                .url(BASE_URL + "/messages/" + messageId + "/download")
+                .get()
+                .header("Accept", "text/plain, message/rfc822, text/html, */*")
+                .header("Authorization", "Bearer " + currentToken)
+                .header("User-Agent", "TempMailAutoFill/1.3")
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                return null;
+            }
+            return response.body() != null ? response.body().string() : null;
+        }
+    }
+
+    private String extractVerificationCode(String rawContent) {
+        if (rawContent == null || rawContent.trim().isEmpty()) {
+            return null;
+        }
+
+        String normalized = normalizeContent(rawContent);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        Matcher keywordMatcher = KEYWORD_CODE_PATTERN.matcher(normalized);
+        if (keywordMatcher.find()) {
+            return keywordMatcher.group(1);
+        }
+
+        Matcher alphanumericKeywordMatcher = ALPHANUMERIC_KEYWORD_CODE_PATTERN.matcher(normalized);
+        if (alphanumericKeywordMatcher.find()) {
+            return sanitizeCandidate(alphanumericKeywordMatcher.group(1));
+        }
+
+        Matcher numericMatcher = NUMERIC_CODE_PATTERN.matcher(normalized);
+        while (numericMatcher.find()) {
+            String candidate = sanitizeCandidate(numericMatcher.group(1));
+            if (candidate != null && candidate.length() >= 4 && candidate.length() <= 8) {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
     private String extractVerificationCode(JSONObject detail) {
         StringBuilder content = new StringBuilder();
         appendIfPresent(content, detail.optString("subject", ""));
@@ -222,29 +279,25 @@ public class TempMailApi {
             }
         }
 
-        String normalized = content.toString()
-                .replace("&nbsp;", " ")
-                .replaceAll("<[^>]+>", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-        if (normalized.isEmpty()) {
+        appendIfPresent(content, detail.optString("htmlAsText", ""));
+        return extractVerificationCode(content.toString());
+    }
+
+    private String normalizeContent(String rawContent) {
+        String text = rawContent
+                .replace("=\r\n", "")
+                .replace("=\n", "")
+                .replace("&nbsp;", " ");
+        text = Jsoup.parse(text).text();
+        return text.replaceAll("\\s+", " ").trim();
+    }
+
+    private String sanitizeCandidate(String candidate) {
+        if (candidate == null) {
             return null;
         }
-
-        Matcher keywordMatcher = KEYWORD_CODE_PATTERN.matcher(normalized);
-        if (keywordMatcher.find()) {
-            return keywordMatcher.group(1);
-        }
-
-        Matcher numericMatcher = NUMERIC_CODE_PATTERN.matcher(normalized);
-        while (numericMatcher.find()) {
-            String candidate = numericMatcher.group(1);
-            if (candidate != null && candidate.length() >= 4 && candidate.length() <= 8) {
-                return candidate;
-            }
-        }
-
-        return null;
+        String sanitized = candidate.trim().replaceAll("[^A-Za-z0-9]", "");
+        return sanitized.isEmpty() ? null : sanitized;
     }
 
     private void appendIfPresent(StringBuilder builder, String value) {
