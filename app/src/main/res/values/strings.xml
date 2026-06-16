@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TempMail AutoFill</string>
+    <string name="dashboard_eyebrow">Smart Verification Assistant</string>
+    <string name="dashboard_title">Professional temp inbox and autofill in one place</string>
+    <string name="dashboard_subtitle">Generate an email, monitor incoming verification codes, and autofill supported fields with less friction.</string>
+    <string name="card_overview_title">Control Center</string>
+    <string name="card_overview_subtitle">Track readiness, inbox health, and the latest values before opening a sign-up flow.</string>
+    <string name="status_badge_off">Off</string>
+    <string name="status_badge_ready">Ready</string>
+    <string name="status_badge_setup">Needs Setup</string>
+    <string name="status_summary_off">Automation is off. Turn it on to create a temp inbox and start polling for codes.</string>
+    <string name="status_summary_ready">Automation is active and ready to fill supported email and verification fields.</string>
+    <string name="status_summary_setup">Automation is on, but accessibility access still needs to be enabled.</string>
+    <string name="switch_title">Enable automation</string>
+    <string name="switch_subtitle">Start the temp inbox service and keep the latest email and code ready for autofill.</string>
+    <string name="button_accessibility">Open accessibility settings</string>
+    <string name="button_refresh">Refresh mailbox</string>
+    <string name="button_test">Open test sign-up page</string>
+    <string name="card_status_title">Live Status</string>
+    <string name="label_accessibility">Accessibility</string>
+    <string name="label_service">Mailbox polling</string>
+    <string name="value_accessibility_on">Connected</string>
+    <string name="value_accessibility_off">Not connected</string>
+    <string name="value_service_on">Running</string>
+    <string name="value_service_off">Idle</string>
+    <string name="card_mailbox_title">Mailbox Snapshot</string>
+    <string name="label_email">Current temp email</string>
+    <string name="label_code">Latest verification code</string>
+    <string name="label_sync">Last sync</string>
+    <string name="placeholder_email">No mailbox generated yet</string>
+    <string name="placeholder_code">Waiting for a verification code</string>
+    <string name="placeholder_sync">Never</string>
+    <string name="card_steps_title">Recommended flow</string>
+    <string name="step_one">1. Enable automation and grant accessibility access.</string>
+    <string name="step_two">2. Refresh the mailbox to generate a current temp email.</string>
+    <string name="step_three">3. Open the test page or your target sign-up flow and let the app assist.</string>
+    <string name="toast_accessibility_hint">Accessibility access is still required for autofill to work.</string>
+    <string name="toast_refresh_started">Mailbox refresh started.</string>
+    <string name="status_error_prefix">Attention: </string>
+    <string name="webview_title">Test Sign-up</string>
+</resources>
