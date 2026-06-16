@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="TempMail AutoFill"
+        android:textSize="24sp"
+        android:textStyle="bold" />
+    <Switch
+        android:id="@+id/switch_auto"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Enable Automatic Filling" />
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: Off" />
+    <Button
+        android:id="@+id/btn_start_service"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Open Accessibility Settings" />
+    <Button
+        android:id="@+id/btn_test_webview"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Test Sign‑up (WebView)"
+        android:onClick="openWebView" />
+</LinearLayout>
