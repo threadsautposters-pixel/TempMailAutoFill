@@ -11,6 +11,8 @@ import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.text.format.DateFormat;
@@ -39,10 +41,19 @@ public class MainActivity extends AppCompatActivity {
     private TextView emailValue;
     private TextView codeValue;
     private TextView providerValue;
+    private TextView mailboxCountdownValue;
     private TextView lastSyncValue;
     private TextView historyEmpty;
     private LinearLayout historyContainer;
     private SharedPreferences prefs;
+    private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
+    private final Runnable dashboardTicker = new Runnable() {
+        @Override
+        public void run() {
+            updateDashboard();
+            dashboardHandler.postDelayed(this, 1000L);
+        }
+    };
 
     private final SharedPreferences.OnSharedPreferenceChangeListener preferenceChangeListener =
             (sharedPreferences, key) -> updateDashboard();
@@ -61,6 +72,7 @@ public class MainActivity extends AppCompatActivity {
         emailValue = findViewById(R.id.email_value);
         codeValue = findViewById(R.id.code_value);
         providerValue = findViewById(R.id.provider_value);
+        mailboxCountdownValue = findViewById(R.id.mailbox_countdown_value);
         lastSyncValue = findViewById(R.id.last_sync_value);
         historyEmpty = findViewById(R.id.history_empty);
         historyContainer = findViewById(R.id.history_container);
@@ -125,10 +137,12 @@ public class MainActivity extends AppCompatActivity {
         super.onStart();
         prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener);
         updateDashboard();
+        dashboardHandler.post(dashboardTicker);
     }
 
     @Override
     protected void onStop() {
+        dashboardHandler.removeCallbacks(dashboardTicker);
         prefs.unregisterOnSharedPreferenceChangeListener(preferenceChangeListener);
         super.onStop();
     }
@@ -162,6 +176,7 @@ public class MainActivity extends AppCompatActivity {
         String provider = prefs.getString("latest_provider", "");
         String lastError = prefs.getString("last_error", "");
         long lastSync = prefs.getLong("last_sync", 0L);
+        long mailboxExpiresAt = prefs.getLong("mailbox_expires_at", 0L);
 
         if (switchAutoFill.isChecked() != enabled) {
             switchAutoFill.setChecked(enabled);
@@ -214,6 +229,7 @@ public class MainActivity extends AppCompatActivity {
         emailValue.setText(TextUtils.isEmpty(email) ? getString(R.string.placeholder_email) : email);
         codeValue.setText(TextUtils.isEmpty(code) ? getString(R.string.placeholder_code) : code);
         providerValue.setText(TextUtils.isEmpty(provider) ? getString(R.string.placeholder_provider) : provider);
+        mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
         lastSyncValue.setText(lastSync <= 0
                 ? getString(R.string.placeholder_sync)
                 : DateFormat.getMediumDateFormat(this).format(new Date(lastSync))
@@ -310,6 +326,28 @@ public class MainActivity extends AppCompatActivity {
         return DateFormat.getMediumDateFormat(this).format(date)
                 + " "
                 + DateFormat.getTimeFormat(this).format(date);
+    }
+
+    private String formatMailboxCountdown(boolean enabled, boolean serviceActive, long mailboxExpiresAt) {
+        if (!enabled) {
+            return getString(R.string.placeholder_countdown_off);
+        }
+        if (!serviceActive && mailboxExpiresAt <= 0L) {
+            return getString(R.string.placeholder_countdown_waiting);
+        }
+        if (mailboxExpiresAt <= 0L) {
+            return getString(R.string.placeholder_countdown_waiting);
+        }
+
+        long remainingMs = mailboxExpiresAt - System.currentTimeMillis();
+        if (remainingMs <= 0L) {
+            return getString(R.string.placeholder_countdown_refreshing);
+        }
+
+        long totalSeconds = remainingMs / 1000L;
+        long minutes = totalSeconds / 60L;
+        long seconds = totalSeconds % 60L;
+        return String.format(Locale.US, "%02d:%02d", minutes, seconds);
     }
 
     private int dpToPx(int dp) {

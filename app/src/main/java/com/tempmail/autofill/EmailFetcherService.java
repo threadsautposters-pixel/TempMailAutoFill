@@ -15,6 +15,9 @@ import androidx.core.app.NotificationCompat;
 public class EmailFetcherService extends Service {
     private static final String CHANNEL_ID = "mailbox_monitoring";
     private static final int NOTIFICATION_ID = 1001;
+    private static final long POLL_INTERVAL_MS = 3000L;
+    private static final long ERROR_RETRY_MS = 5000L;
+    private static final long MAILBOX_LIFETIME_MS = 10 * 60 * 1000L;
 
     private final TempMailApi api = new TempMailApi();
     private volatile boolean serviceActive;
@@ -27,8 +30,11 @@ public class EmailFetcherService extends Service {
 
         ensureForegroundNotification();
 
-        if (forceRefresh && workerThread != null) {
-            workerThread.interrupt();
+        if (forceRefresh) {
+            workerGeneration++;
+            if (workerThread != null) {
+                workerThread.interrupt();
+            }
             workerThread = null;
         }
 
@@ -47,39 +53,60 @@ public class EmailFetcherService extends Service {
     private void runPollingLoop(long generation) {
         SharedPreferences prefs = getSharedPreferences("auto", MODE_PRIVATE);
         String lastError = null;
+        boolean needsMailboxRefresh = shouldCreateMailbox(prefs);
         saveServiceState(true, null);
 
         try {
-            long now = System.currentTimeMillis();
-            String email = api.generateNewEmail();
-            String provider = api.getCurrentProviderName();
-            prefs.edit()
-                    .putString("latest_email", email)
-                    .putString("latest_provider", provider)
-                    .remove("latest_code")
-                    .putLong("last_sync", now)
-                    .apply();
-            HistoryStorage.recordEmail(prefs, email, provider, now);
-
             while (serviceActive
                     && generation == workerGeneration
                     && !Thread.currentThread().isInterrupted()) {
-                String code = api.fetchVerificationCode();
-                SharedPreferences.Editor editor = prefs.edit()
-                        .putBoolean("polling_active", true)
-                        .putLong("last_sync", System.currentTimeMillis())
-                        .remove("last_error");
+                try {
+                    if (needsMailboxRefresh || isMailboxExpired(prefs)) {
+                        long now = System.currentTimeMillis();
+                        String email = api.generateNewEmail();
+                        String provider = api.getCurrentProviderName();
+                        prefs.edit()
+                                .putString("latest_email", email)
+                                .putString("latest_provider", provider)
+                                .remove("latest_code")
+                                .putLong("last_sync", now)
+                                .putLong("mailbox_created_at", now)
+                                .putLong("mailbox_expires_at", now + MAILBOX_LIFETIME_MS)
+                                .remove("last_error")
+                                .apply();
+                        HistoryStorage.recordEmail(prefs, email, provider, now);
+                        needsMailboxRefresh = false;
+                    }
 
-                if (code != null && !code.trim().isEmpty()) {
-                    editor.putString("latest_code", code.trim());
+                    String code = api.fetchVerificationCode();
+                    SharedPreferences.Editor editor = prefs.edit()
+                            .putBoolean("polling_active", true)
+                            .putLong("last_sync", System.currentTimeMillis())
+                            .remove("last_error");
+
+                    if (code != null && !code.trim().isEmpty()) {
+                        editor.putString("latest_code", code.trim());
+                    }
+
+                    editor.apply();
+                    lastError = null;
+                    Thread.sleep(POLL_INTERVAL_MS);
+                } catch (InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt();
+                    throw interruptedException;
+                } catch (Exception loopError) {
+                    Log.e("Fetcher", "Mailbox loop error", loopError);
+                    lastError = loopError.getMessage();
+                    saveServiceState(true, lastError);
+                    needsMailboxRefresh = true;
+                    Thread.sleep(ERROR_RETRY_MS);
                 }
-
-                editor.apply();
-                Thread.sleep(3000);
             }
         } catch (Exception e) {
             Log.e("Fetcher", "Error", e);
-            lastError = e.getMessage();
+            if (!(e instanceof InterruptedException)) {
+                lastError = e.getMessage();
+            }
         } finally {
             boolean currentWorkerOwnsState =
                     workerThread == Thread.currentThread() && generation == workerGeneration;
@@ -90,6 +117,16 @@ public class EmailFetcherService extends Service {
                 stopSelf();
             }
         }
+    }
+
+    private boolean shouldCreateMailbox(SharedPreferences prefs) {
+        String currentEmail = prefs.getString("latest_email", "");
+        return currentEmail == null || currentEmail.trim().isEmpty() || isMailboxExpired(prefs);
+    }
+
+    private boolean isMailboxExpired(SharedPreferences prefs) {
+        long expiresAt = prefs.getLong("mailbox_expires_at", 0L);
+        return expiresAt <= 0L || System.currentTimeMillis() >= expiresAt;
     }
 
     @Override
