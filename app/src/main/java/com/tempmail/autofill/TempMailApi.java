@@ -127,9 +127,28 @@ public class TempMailApi {
     }
 
     private JSONArray fetchDomains() throws IOException {
-        JSONObject response = getJson("/domains", false);
-        JSONArray items = response.optJSONArray("hydra:member");
-        return items != null ? items : new JSONArray();
+        String body = getResponseBody("/domains", false);
+        String trimmedBody = body == null ? "" : body.trim();
+        if (trimmedBody.isEmpty()) {
+            return new JSONArray();
+        }
+
+        try {
+            if (trimmedBody.startsWith("[")) {
+                return new JSONArray(trimmedBody);
+            }
+
+            JSONObject response = new JSONObject(trimmedBody);
+            JSONArray hydraItems = response.optJSONArray("hydra:member");
+            if (hydraItems != null) {
+                return hydraItems;
+            }
+
+            JSONArray directItems = response.optJSONArray("domains");
+            return directItems != null ? directItems : new JSONArray();
+        } catch (JSONException e) {
+            throw new IOException("Invalid JSON from /domains", e);
+        }
     }
 
     private void createAccount(String address, String password) throws IOException {
@@ -171,11 +190,20 @@ public class TempMailApi {
     }
 
     private JSONObject getJson(String path, boolean authenticated) throws IOException {
+        String body = getResponseBody(path, authenticated);
+        try {
+            return new JSONObject(body);
+        } catch (JSONException e) {
+            throw new IOException("Invalid JSON from " + path, e);
+        }
+    }
+
+    private String getResponseBody(String path, boolean authenticated) throws IOException {
         Request.Builder builder = new Request.Builder()
                 .url(BASE_URL + path)
                 .get()
-                .header("Accept", "application/json")
-                .header("User-Agent", "TempMailAutoFill/1.3");
+                .header("Accept", "application/ld+json, application/json;q=0.9, */*;q=0.8")
+                .header("User-Agent", "TempMailAutoFill/1.4");
         if (authenticated) {
             builder.header("Authorization", "Bearer " + currentToken);
         }
@@ -185,11 +213,7 @@ public class TempMailApi {
             if (!response.isSuccessful()) {
                 throw new IOException("GET " + path + " failed: " + response.code() + " " + body);
             }
-            try {
-                return new JSONObject(body);
-            } catch (JSONException e) {
-                throw new IOException("Invalid JSON from " + path, e);
-            }
+            return body;
         }
     }
 
@@ -200,7 +224,7 @@ public class TempMailApi {
                 .post(body)
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
-                .header("User-Agent", "TempMailAutoFill/1.3");
+                .header("User-Agent", "TempMailAutoFill/1.4");
         if (authenticated) {
             builder.header("Authorization", "Bearer " + currentToken);
         }
@@ -224,7 +248,7 @@ public class TempMailApi {
                 .get()
                 .header("Accept", "text/plain, message/rfc822, text/html, */*")
                 .header("Authorization", "Bearer " + currentToken)
-                .header("User-Agent", "TempMailAutoFill/1.3")
+                .header("User-Agent", "TempMailAutoFill/1.4")
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
