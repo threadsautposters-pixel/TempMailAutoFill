@@ -38,18 +38,24 @@ public class AutoFillService extends AccessibilityService {
 
         List<AccessibilityNodeInfo> fields = new ArrayList<>();
         collectEditableNodes(root, fields);
+        String pageSignature = buildPageSignature(root);
 
         AccessibilityNodeInfo focusedNode = findBestTargetNode(root, event.getSource());
         if (tryFillSegmentedCodeFields(fields, focusedNode, code)) {
             return;
         }
 
-        if (tryFillNode(focusedNode, email, code)) {
+        if (tryFillNode(focusedNode, email, code, pageSignature, true)) {
+            return;
+        }
+
+        AccessibilityNodeInfo bestEmailNode = findBestEmailNode(fields, focusedNode, pageSignature);
+        if (bestEmailNode != null && tryFillNode(bestEmailNode, email, code, pageSignature, true)) {
             return;
         }
 
         for (AccessibilityNodeInfo node : fields) {
-            if (tryFillNode(node, email, code)) {
+            if (tryFillNode(node, email, code, pageSignature, false)) {
                 return;
             }
         }
@@ -109,12 +115,16 @@ public class AutoFillService extends AccessibilityService {
     }
 
     private boolean isEditableField(AccessibilityNodeInfo node) {
-        return node != null && node.isEnabled() && node.isEditable();
+        return node != null
+                && node.isEnabled()
+                && node.isVisibleToUser()
+                && (node.isEditable() || supportsSetText(node) || isTextInputClass(node));
     }
 
     private String buildFieldSignature(AccessibilityNodeInfo node) {
         StringBuilder builder = new StringBuilder();
         appendIfPresent(builder, node.getViewIdResourceName());
+        appendIfPresent(builder, node.getClassName());
         appendIfPresent(builder, node.getText());
         appendIfPresent(builder, node.getContentDescription());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -122,8 +132,49 @@ public class AutoFillService extends AccessibilityService {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             appendIfPresent(builder, node.getHintText());
+            appendIfPresent(builder, node.getTooltipText());
+        }
+
+        AccessibilityNodeInfo parent = node.getParent();
+        for (int depth = 0; depth < 2 && parent != null; depth++) {
+            appendIfPresent(builder, parent.getViewIdResourceName());
+            appendIfPresent(builder, parent.getText());
+            appendIfPresent(builder, parent.getContentDescription());
+            parent = parent.getParent();
         }
         return builder.toString().toLowerCase(Locale.US);
+    }
+
+    private String buildPageSignature(AccessibilityNodeInfo root) {
+        StringBuilder builder = new StringBuilder();
+        collectPageText(root, builder, 0, 250);
+        return builder.toString().toLowerCase(Locale.US);
+    }
+
+    private int collectPageText(
+            AccessibilityNodeInfo node,
+            StringBuilder builder,
+            int visited,
+            int limit
+    ) {
+        if (node == null || visited >= limit) {
+            return visited;
+        }
+
+        appendIfPresent(builder, node.getViewIdResourceName());
+        appendIfPresent(builder, node.getClassName());
+        appendIfPresent(builder, node.getText());
+        appendIfPresent(builder, node.getContentDescription());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            appendIfPresent(builder, node.getHintText());
+            appendIfPresent(builder, node.getTooltipText());
+        }
+
+        int currentVisited = visited + 1;
+        for (int i = 0; i < node.getChildCount() && currentVisited < limit; i++) {
+            currentVisited = collectPageText(node.getChild(i), builder, currentVisited, limit);
+        }
+        return currentVisited;
     }
 
     private void appendIfPresent(StringBuilder builder, CharSequence value) {
@@ -140,7 +191,9 @@ public class AutoFillService extends AccessibilityService {
         return signature.contains("email")
                 || signature.contains("e-mail")
                 || signature.contains("mail")
-                || signature.contains("email address");
+                || signature.contains("email address")
+                || signature.contains("@")
+                || signature.contains("account id");
     }
 
     private boolean shouldFillCode(String signature) {
@@ -150,6 +203,154 @@ public class AutoFillService extends AccessibilityService {
                 || signature.contains("verify")
                 || signature.contains("pin")
                 || signature.contains("passcode");
+    }
+
+    private boolean isSignupContext(String signature) {
+        return signature.contains("sign up")
+                || signature.contains("signup")
+                || signature.contains("register")
+                || signature.contains("create account")
+                || signature.contains("create your account")
+                || signature.contains("join now")
+                || signature.contains("get started")
+                || signature.contains("start free")
+                || signature.contains("continue with email");
+    }
+
+    private boolean looksLikePasswordField(String signature) {
+        return signature.contains("password")
+                || signature.contains("pass word")
+                || signature.contains("confirm password")
+                || signature.contains("new password");
+    }
+
+    private boolean looksLikePhoneField(String signature) {
+        return signature.contains("phone")
+                || signature.contains("mobile")
+                || signature.contains("telephone")
+                || signature.contains("tel");
+    }
+
+    private boolean looksLikeNameField(String signature) {
+        return signature.contains("full name")
+                || signature.contains("first name")
+                || signature.contains("last name")
+                || signature.contains("your name");
+    }
+
+    private boolean looksLikeSearchField(String signature) {
+        return signature.contains("search")
+                || signature.contains("query");
+    }
+
+    private boolean supportsSetText(AccessibilityNodeInfo node) {
+        if (node == null) {
+            return false;
+        }
+        List<AccessibilityNodeInfo.AccessibilityAction> actions = node.getActionList();
+        if (actions == null) {
+            return false;
+        }
+        for (AccessibilityNodeInfo.AccessibilityAction action : actions) {
+            if (action != null && action.getId() == AccessibilityNodeInfo.ACTION_SET_TEXT) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTextInputClass(AccessibilityNodeInfo node) {
+        if (node == null || node.getClassName() == null) {
+            return false;
+        }
+        String className = node.getClassName().toString().toLowerCase(Locale.US);
+        return className.contains("edittext")
+                || className.contains("textfield")
+                || className.contains("autocomplete");
+    }
+
+    private AccessibilityNodeInfo findBestEmailNode(
+            List<AccessibilityNodeInfo> fields,
+            AccessibilityNodeInfo focusedNode,
+            String pageSignature
+    ) {
+        int bestScore = Integer.MIN_VALUE;
+        AccessibilityNodeInfo bestNode = null;
+        boolean signupContext = isSignupContext(pageSignature);
+
+        for (AccessibilityNodeInfo node : fields) {
+            if (!isEditableField(node)) {
+                continue;
+            }
+
+            String signature = buildFieldSignature(node);
+            int score = scoreEmailField(node, signature, focusedNode, signupContext);
+            if (score > bestScore) {
+                bestScore = score;
+                bestNode = node;
+            }
+        }
+
+        return bestScore >= 40 ? bestNode : null;
+    }
+
+    private int scoreEmailField(
+            AccessibilityNodeInfo node,
+            String signature,
+            AccessibilityNodeInfo focusedNode,
+            boolean signupContext
+    ) {
+        int score = 0;
+        if (shouldFillEmail(signature)) {
+            score += 120;
+        }
+        if (signupContext) {
+            score += 35;
+        }
+        if (node.equals(focusedNode)) {
+            score += 45;
+        }
+        if (isTextInputClass(node)) {
+            score += 20;
+        }
+        if (supportsSetText(node)) {
+            score += 15;
+        }
+        if (node.isFocused()) {
+            score += 20;
+        }
+
+        CharSequence text = node.getText();
+        String currentValue = text == null ? "" : text.toString().trim();
+        if (!currentValue.isEmpty()) {
+            if (currentValue.contains("@")) {
+                score -= 100;
+            } else {
+                score -= 30;
+            }
+        }
+
+        if (shouldFillCode(signature)) {
+            score -= 90;
+        }
+        if (looksLikePasswordField(signature)) {
+            score -= 120;
+        }
+        if (looksLikePhoneField(signature)) {
+            score -= 80;
+        }
+        if (looksLikeNameField(signature)) {
+            score -= 50;
+        }
+        if (looksLikeSearchField(signature)) {
+            score -= 80;
+        }
+
+        int maxLen = node.getMaxTextLength();
+        if (maxLen > 0 && maxLen <= 2) {
+            score -= 120;
+        }
+        return score;
     }
 
     private boolean tryFillSegmentedCodeFields(
@@ -212,23 +413,43 @@ public class AutoFillService extends AccessibilityService {
         return filledAny;
     }
 
-    private boolean tryFillNode(AccessibilityNodeInfo node, String email, String code) {
+    private boolean tryFillNode(
+            AccessibilityNodeInfo node,
+            String email,
+            String code,
+            String pageSignature,
+            boolean allowAggressiveEmail
+    ) {
         if (!isEditableField(node)) {
             return false;
         }
 
         String signature = buildFieldSignature(node);
-        if (signature.isEmpty()) {
+        if (signature.isEmpty() && !allowAggressiveEmail) {
             return false;
         }
 
         CharSequence existingText = node.getText();
         String currentValue = existingText == null ? "" : existingText.toString().trim();
+        boolean signupContext = isSignupContext(pageSignature);
 
         if (shouldFillEmail(signature) && email != null && !email.isEmpty()) {
             if (!currentValue.isEmpty()) {
                 return false;
             }
+            return fillNode(node, email);
+        }
+
+        if (allowAggressiveEmail
+                && email != null
+                && !email.isEmpty()
+                && currentValue.isEmpty()
+                && signupContext
+                && !shouldFillCode(signature)
+                && !looksLikePasswordField(signature)
+                && !looksLikePhoneField(signature)
+                && !looksLikeNameField(signature)
+                && !looksLikeSearchField(signature)) {
             return fillNode(node, email);
         }
 
