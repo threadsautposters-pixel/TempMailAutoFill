@@ -15,6 +15,9 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            // Use the default debug keystore so CI produces an installable APK.
+            // Replace this with a real release keystore for production distribution.
+            signingConfig signingConfigs.debug
         }
     }
     compileOptions {
