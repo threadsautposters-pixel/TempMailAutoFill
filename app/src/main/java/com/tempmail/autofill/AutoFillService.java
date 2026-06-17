@@ -79,6 +79,7 @@ public class AutoFillService extends AccessibilityService {
 
         String email = prefs.getString("latest_email", null);
         String code = prefs.getString("latest_code", null);
+        boolean aggressiveSignupAutofill = prefs.getBoolean("aggressive_signup_autofill", false);
         String windowSignature = buildWindowSignature(root);
 
         List<AccessibilityNodeInfo> fields = new ArrayList<>();
@@ -89,7 +90,14 @@ public class AutoFillService extends AccessibilityService {
             return;
         }
 
-        tryFillBestCandidate(focusedNode, fields, windowSignature, email, code);
+        tryFillBestCandidate(
+                focusedNode,
+                fields,
+                windowSignature,
+                email,
+                code,
+                aggressiveSignupAutofill
+        );
     }
 
     private void collectEditableNodes(AccessibilityNodeInfo node, List<AccessibilityNodeInfo> fields) {
@@ -483,13 +491,14 @@ public class AutoFillService extends AccessibilityService {
             List<AccessibilityNodeInfo> fields,
             String windowSignature,
             String email,
-            String code
+            String code,
+            boolean aggressiveSignupAutofill
     ) {
-        if (tryFillFocusedNode(focusedNode, windowSignature, email, code)) {
+        if (tryFillFocusedNode(focusedNode, windowSignature, email, code, aggressiveSignupAutofill)) {
             return true;
         }
 
-        if (fillLikelyEmailCandidates(fields, windowSignature, email)) {
+        if (fillLikelyEmailCandidates(fields, windowSignature, email, aggressiveSignupAutofill)) {
             return true;
         }
 
@@ -501,7 +510,8 @@ public class AutoFillService extends AccessibilityService {
             AccessibilityNodeInfo focusedNode,
             String windowSignature,
             String email,
-            String code
+            String code,
+            boolean aggressiveSignupAutofill
     ) {
         if (!canAcceptText(focusedNode)) {
             return false;
@@ -518,6 +528,15 @@ public class AutoFillService extends AccessibilityService {
             return true;
         }
 
+        if (aggressiveSignupAutofill
+                && !TextUtils.isEmpty(email)
+                && emailScore >= AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD
+                && emailScore >= codeScore
+                && isLikelySignupTextField(focusedNode, nodeContext, windowSignature)
+                && fillNode(focusedNode, email)) {
+            return true;
+        }
+
         return !TextUtils.isEmpty(code)
                 && codeScore >= CODE_SCORE_THRESHOLD
                 && fillNode(focusedNode, code);
@@ -526,7 +545,8 @@ public class AutoFillService extends AccessibilityService {
     private boolean fillLikelyEmailCandidates(
             List<AccessibilityNodeInfo> fields,
             String windowSignature,
-            String email
+            String email,
+            boolean aggressiveSignupAutofill
     ) {
         if (TextUtils.isEmpty(email)) {
             return false;
@@ -551,6 +571,10 @@ public class AutoFillService extends AccessibilityService {
             if (filledAny) {
                 return true;
             }
+        }
+
+        if (!aggressiveSignupAutofill) {
+            return false;
         }
 
         Candidate aggressiveCandidate = findBestEmailCandidate(

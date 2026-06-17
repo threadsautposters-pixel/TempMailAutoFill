@@ -40,6 +40,7 @@ import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
     private SwitchMaterial switchAutoFill;
+    private SwitchMaterial switchAggressiveSignup;
     private TextView statusText;
     private TextView statusBadge;
     private TextView accessibilityStatus;
@@ -107,11 +108,13 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
         switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
+        switchAggressiveSignup = findViewById(R.id.switch_aggressive_signup);
 
         prefs = getSharedPreferences("auto", MODE_PRIVATE);
         switchAutoFill.setChecked(prefs.getBoolean("enabled", false));
         switchAutoCopy.setChecked(prefs.getBoolean("auto_copy_code", false));
         switchOtpAlerts.setChecked(prefs.getBoolean("otp_detect_enabled", true));
+        switchAggressiveSignup.setChecked(prefs.getBoolean("aggressive_signup_autofill", false));
         switchAutoFill.setOnCheckedChangeListener((btn, checked) -> {
             prefs.edit().putBoolean("enabled", checked).apply();
             if (checked) startEmailFetcher(false);
@@ -131,6 +134,10 @@ public class MainActivity extends AppCompatActivity {
                 editor.remove("last_notified_code");
             }
             editor.apply();
+            updateDashboard();
+        });
+        switchAggressiveSignup.setOnCheckedChangeListener((buttonView, checked) -> {
+            prefs.edit().putBoolean("aggressive_signup_autofill", checked).apply();
             updateDashboard();
         });
 
@@ -284,6 +291,9 @@ public class MainActivity extends AppCompatActivity {
         }
         if (switchOtpAlerts.isChecked() != prefs.getBoolean("otp_detect_enabled", true)) {
             switchOtpAlerts.setChecked(prefs.getBoolean("otp_detect_enabled", true));
+        }
+        if (switchAggressiveSignup.isChecked() != prefs.getBoolean("aggressive_signup_autofill", false)) {
+            switchAggressiveSignup.setChecked(prefs.getBoolean("aggressive_signup_autofill", false));
         }
 
         if (!enabled) {

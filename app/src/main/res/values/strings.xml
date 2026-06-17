@@ -17,6 +17,7 @@
     <string name="switch_title">Enable automation</string>
     <string name="switch_subtitle">Start the temp inbox service and keep the latest email and code ready for autofill.</string>
     <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
+    <string name="switch_aggressive_signup">Aggressive sign-up autofill for unlabeled email fields</string>
     <string name="switch_otp_alerts">Show instant OTP notifications</string>
     <string name="button_accessibility">Open accessibility settings</string>
     <string name="button_refresh">Refresh mailbox</string>
