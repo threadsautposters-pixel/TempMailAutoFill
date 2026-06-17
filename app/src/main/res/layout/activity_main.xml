@@ -438,6 +438,26 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
                     android:text="@string/button_test" />
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switch_auto_copy"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:text="@string/switch_auto_copy"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="16sp"
+                    app:thumbTint="@color/color_surface"
+                    app:trackTint="@color/color_primary_light"
+                    app:useMaterialThemeColors="false" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_lifetime_preset"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/button_lifetime_default" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

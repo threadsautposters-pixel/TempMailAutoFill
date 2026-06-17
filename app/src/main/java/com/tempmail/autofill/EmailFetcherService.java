@@ -1,23 +1,30 @@
 package com.tempmail.autofill;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.IBinder;
+import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 public class EmailFetcherService extends Service {
+    public static final String ACTION_FORCE_REFRESH = "com.tempmail.autofill.action.FORCE_REFRESH";
+
     private static final String CHANNEL_ID = "mailbox_monitoring";
     private static final int NOTIFICATION_ID = 1001;
     private static final long POLL_INTERVAL_MS = 3000L;
     private static final long ERROR_RETRY_MS = 5000L;
-    private static final long MAILBOX_LIFETIME_MS = 10 * 60 * 1000L;
+    private static final int DEFAULT_MAILBOX_LIFETIME_MINUTES = 10;
 
     private final TempMailApi api = new TempMailApi();
     private volatile boolean serviceActive;
@@ -26,7 +33,9 @@ public class EmailFetcherService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        boolean forceRefresh = intent != null && intent.getBooleanExtra("force_refresh", false);
+        boolean forceRefresh = intent != null
+                && (intent.getBooleanExtra("force_refresh", false)
+                || ACTION_FORCE_REFRESH.equals(intent.getAction()));
 
         ensureForegroundNotification();
 
@@ -65,16 +74,18 @@ public class EmailFetcherService extends Service {
                         long now = System.currentTimeMillis();
                         String email = api.generateNewEmail();
                         String provider = api.getCurrentProviderName();
+                        long mailboxLifetimeMs = getMailboxLifetimeMs(prefs);
                         prefs.edit()
                                 .putString("latest_email", email)
                                 .putString("latest_provider", provider)
                                 .remove("latest_code")
                                 .putLong("last_sync", now)
                                 .putLong("mailbox_created_at", now)
-                                .putLong("mailbox_expires_at", now + MAILBOX_LIFETIME_MS)
+                                .putLong("mailbox_expires_at", now + mailboxLifetimeMs)
                                 .remove("last_error")
                                 .apply();
                         HistoryStorage.recordEmail(prefs, email, provider, now);
+                        updateNotification(email, null);
                         needsMailboxRefresh = false;
                     }
 
@@ -85,7 +96,12 @@ public class EmailFetcherService extends Service {
                             .remove("last_error");
 
                     if (code != null && !code.trim().isEmpty()) {
-                        editor.putString("latest_code", code.trim());
+                        String trimmedCode = code.trim();
+                        editor.putString("latest_code", trimmedCode);
+                        maybeAutoCopyCode(prefs, trimmedCode);
+                        updateNotification(prefs.getString("latest_email", ""), trimmedCode);
+                    } else {
+                        updateNotification(prefs.getString("latest_email", ""), prefs.getString("latest_code", ""));
                     }
 
                     editor.apply();
@@ -98,6 +114,7 @@ public class EmailFetcherService extends Service {
                     Log.e("Fetcher", "Mailbox loop error", loopError);
                     lastError = loopError.getMessage();
                     saveServiceState(true, lastError);
+                    updateNotification(prefs.getString("latest_email", ""), null);
                     needsMailboxRefresh = true;
                     Thread.sleep(ERROR_RETRY_MS);
                 }
@@ -127,6 +144,28 @@ public class EmailFetcherService extends Service {
     private boolean isMailboxExpired(SharedPreferences prefs) {
         long expiresAt = prefs.getLong("mailbox_expires_at", 0L);
         return expiresAt <= 0L || System.currentTimeMillis() >= expiresAt;
+    }
+
+    private long getMailboxLifetimeMs(SharedPreferences prefs) {
+        int minutes = prefs.getInt("mailbox_lifetime_minutes", DEFAULT_MAILBOX_LIFETIME_MINUTES);
+        minutes = Math.max(5, Math.min(minutes, 20));
+        return minutes * 60L * 1000L;
+    }
+
+    private void maybeAutoCopyCode(SharedPreferences prefs, String code) {
+        if (!prefs.getBoolean("auto_copy_code", false) || TextUtils.isEmpty(code)) {
+            return;
+        }
+        String lastCopiedCode = prefs.getString("last_auto_copied_code", "");
+        if (code.equals(lastCopiedCode)) {
+            return;
+        }
+
+        ClipboardManager clipboardManager = ContextCompat.getSystemService(this, ClipboardManager.class);
+        if (clipboardManager != null) {
+            clipboardManager.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), code));
+            prefs.edit().putString("last_auto_copied_code", code).apply();
+        }
     }
 
     @Override
@@ -161,9 +200,32 @@ public class EmailFetcherService extends Service {
 
     private void ensureForegroundNotification() {
         createNotificationChannel();
+        startForeground(NOTIFICATION_ID, buildNotification(null, null));
+    }
+
+    private void updateNotification(String email, String code) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) {
+            return;
+        }
+        manager.notify(NOTIFICATION_ID, buildNotification(email, code));
+    }
+
+    private Notification buildNotification(String email, String code) {
+        String contentText;
+        if (!TextUtils.isEmpty(code)) {
+            contentText = getString(R.string.notification_text_code_ready, code);
+        } else if (!TextUtils.isEmpty(email)) {
+            contentText = getString(R.string.notification_text_email_ready, email);
+        } else {
+            contentText = getString(R.string.notification_text);
+        }
 
         Intent openAppIntent = new Intent(this, MainActivity.class);
         openAppIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        Intent refreshIntent = new Intent(this, EmailFetcherService.class);
+        refreshIntent.setAction(ACTION_FORCE_REFRESH);
+        refreshIntent.putExtra("force_refresh", true);
 
         int pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -176,17 +238,22 @@ public class EmailFetcherService extends Service {
                 openAppIntent,
                 pendingIntentFlags
         );
+        PendingIntent refreshPendingIntent = PendingIntent.getService(
+                this,
+                1,
+                refreshIntent,
+                pendingIntentFlags
+        );
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_notification)
                 .setContentTitle(getString(R.string.notification_title))
-                .setContentText(getString(R.string.notification_text))
+                .setContentText(contentText)
                 .setContentIntent(pendingIntent)
+                .addAction(0, getString(R.string.notification_action_refresh), refreshPendingIntent)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW);
-
-        startForeground(NOTIFICATION_ID, builder.build());
     }
 
     private void createNotificationChannel() {

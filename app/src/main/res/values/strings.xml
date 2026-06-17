@@ -14,9 +14,12 @@
     <string name="status_summary_setup">Automation is on, but accessibility access still needs to be enabled.</string>
     <string name="switch_title">Enable automation</string>
     <string name="switch_subtitle">Start the temp inbox service and keep the latest email and code ready for autofill.</string>
+    <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
     <string name="button_accessibility">Open accessibility settings</string>
     <string name="button_refresh">Refresh mailbox</string>
     <string name="button_test">Open test sign-up page</string>
+    <string name="button_lifetime_default">Mailbox lifetime: 10 min</string>
+    <string name="button_lifetime_format">Mailbox lifetime: %1$d min</string>
     <string name="button_copy_email">Copy email</string>
     <string name="button_copy_code">Copy code</string>
     <string name="button_clear_history">Clear history</string>
@@ -56,10 +59,14 @@
     <string name="toast_copied_email">Email copied.</string>
     <string name="toast_copied_code">Verification code copied.</string>
     <string name="toast_copy_unavailable">Nothing available to copy yet.</string>
+    <string name="toast_lifetime_updated">Mailbox lifetime updated and refresh started.</string>
     <string name="status_error_prefix">Attention: </string>
     <string name="webview_title">Test Sign-up</string>
     <string name="notification_channel_name">Mailbox monitoring</string>
     <string name="notification_channel_description">Keeps temp email polling stable while monitoring for verification codes.</string>
     <string name="notification_title">TempMail AutoFill is active</string>
     <string name="notification_text">Monitoring mailbox activity and waiting for verification codes.</string>
+    <string name="notification_text_email_ready">Current mailbox ready: %1$s</string>
+    <string name="notification_text_code_ready">Verification code ready: %1$s</string>
+    <string name="notification_action_refresh">Refresh</string>
 </resources>

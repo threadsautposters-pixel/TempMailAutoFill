@@ -46,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView historyEmpty;
     private LinearLayout historyContainer;
     private SharedPreferences prefs;
+    private SwitchMaterial switchAutoCopy;
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
     private final Runnable dashboardTicker = new Runnable() {
         @Override
@@ -82,9 +83,12 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
+        MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
+        switchAutoCopy = findViewById(R.id.switch_auto_copy);
 
         prefs = getSharedPreferences("auto", MODE_PRIVATE);
         switchAutoFill.setChecked(prefs.getBoolean("enabled", false));
+        switchAutoCopy.setChecked(prefs.getBoolean("auto_copy_code", false));
         switchAutoFill.setOnCheckedChangeListener((btn, checked) -> {
             prefs.edit().putBoolean("enabled", checked).apply();
             if (checked) startEmailFetcher(false);
@@ -92,6 +96,10 @@ public class MainActivity extends AppCompatActivity {
             if (checked && !isAccessibilityServiceEnabled()) {
                 Toast.makeText(this, R.string.toast_accessibility_hint, Toast.LENGTH_SHORT).show();
             }
+            updateDashboard();
+        });
+        switchAutoCopy.setOnCheckedChangeListener((buttonView, checked) -> {
+            prefs.edit().putBoolean("auto_copy_code", checked).apply();
             updateDashboard();
         });
 
@@ -110,6 +118,13 @@ public class MainActivity extends AppCompatActivity {
 
         btnTest.setOnClickListener(v -> {
             startActivity(new Intent(this, WebViewActivity.class));
+        });
+        btnLifetimePreset.setOnClickListener(v -> {
+            int nextLifetime = getNextLifetimeMinutes();
+            prefs.edit().putInt("mailbox_lifetime_minutes", nextLifetime).apply();
+            btnLifetimePreset.setText(getLifetimeButtonText(nextLifetime));
+            startEmailFetcher(true);
+            Toast.makeText(this, R.string.toast_lifetime_updated, Toast.LENGTH_SHORT).show();
         });
 
         btnCopyEmail.setOnClickListener(v -> copyValue(
@@ -177,9 +192,13 @@ public class MainActivity extends AppCompatActivity {
         String lastError = prefs.getString("last_error", "");
         long lastSync = prefs.getLong("last_sync", 0L);
         long mailboxExpiresAt = prefs.getLong("mailbox_expires_at", 0L);
+        int mailboxLifetimeMinutes = prefs.getInt("mailbox_lifetime_minutes", 10);
 
         if (switchAutoFill.isChecked() != enabled) {
             switchAutoFill.setChecked(enabled);
+        }
+        if (switchAutoCopy.isChecked() != prefs.getBoolean("auto_copy_code", false)) {
+            switchAutoCopy.setChecked(prefs.getBoolean("auto_copy_code", false));
         }
 
         if (!enabled) {
@@ -230,6 +249,8 @@ public class MainActivity extends AppCompatActivity {
         codeValue.setText(TextUtils.isEmpty(code) ? getString(R.string.placeholder_code) : code);
         providerValue.setText(TextUtils.isEmpty(provider) ? getString(R.string.placeholder_provider) : provider);
         mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
+        MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
+        btnLifetimePreset.setText(getLifetimeButtonText(mailboxLifetimeMinutes));
         lastSyncValue.setText(lastSync <= 0
                 ? getString(R.string.placeholder_sync)
                 : DateFormat.getMediumDateFormat(this).format(new Date(lastSync))
@@ -348,6 +369,21 @@ public class MainActivity extends AppCompatActivity {
         long minutes = totalSeconds / 60L;
         long seconds = totalSeconds % 60L;
         return String.format(Locale.US, "%02d:%02d", minutes, seconds);
+    }
+
+    private int getNextLifetimeMinutes() {
+        int current = prefs.getInt("mailbox_lifetime_minutes", 10);
+        if (current <= 5) {
+            return 10;
+        }
+        if (current <= 10) {
+            return 15;
+        }
+        return 5;
+    }
+
+    private String getLifetimeButtonText(int minutes) {
+        return getString(R.string.button_lifetime_format, minutes);
     }
 
     private int dpToPx(int dp) {

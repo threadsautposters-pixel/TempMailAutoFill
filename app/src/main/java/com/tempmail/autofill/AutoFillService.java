@@ -42,6 +42,10 @@ public class AutoFillService extends AccessibilityService {
         List<AccessibilityNodeInfo> fields = new ArrayList<>();
         collectEditableNodes(root, fields);
 
+        if (tryFillSegmentedCodeFields(fields, code)) {
+            return;
+        }
+
         for (AccessibilityNodeInfo node : fields) {
             if (tryFillNode(node, email, code)) {
                 return;
@@ -125,6 +129,47 @@ public class AutoFillService extends AccessibilityService {
                 || signature.contains("verify")
                 || signature.contains("pin")
                 || signature.contains("passcode");
+    }
+
+    private boolean tryFillSegmentedCodeFields(List<AccessibilityNodeInfo> fields, String code) {
+        if (code == null || code.isEmpty()) {
+            return false;
+        }
+
+        String normalizedCode = code.trim();
+        List<AccessibilityNodeInfo> codeFields = new ArrayList<>();
+        for (AccessibilityNodeInfo node : fields) {
+            if (!isEditableField(node)) {
+                continue;
+            }
+
+            String signature = buildFieldSignature(node);
+            if (signature.isEmpty() || !shouldFillCode(signature)) {
+                continue;
+            }
+
+            CharSequence currentText = node.getText();
+            if (currentText != null && currentText.length() > 1) {
+                return false;
+            }
+            codeFields.add(node);
+        }
+
+        if (codeFields.size() < 4 || codeFields.size() > 8 || normalizedCode.length() != codeFields.size()) {
+            return false;
+        }
+
+        boolean filledAny = false;
+        for (int i = 0; i < codeFields.size(); i++) {
+            AccessibilityNodeInfo node = codeFields.get(i);
+            String digit = String.valueOf(normalizedCode.charAt(i));
+            CharSequence existingText = node.getText();
+            if (existingText != null && digit.contentEquals(existingText)) {
+                continue;
+            }
+            filledAny |= fillNode(node, digit);
+        }
+        return filledAny;
     }
 
     private boolean tryFillNode(AccessibilityNodeInfo node, String email, String code) {
