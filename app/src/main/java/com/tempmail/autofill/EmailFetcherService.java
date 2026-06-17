@@ -40,6 +40,12 @@ public class EmailFetcherService extends Service {
         ensureForegroundNotification();
 
         if (forceRefresh) {
+            getSharedPreferences("auto", MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("pending_force_refresh", true)
+                    .remove("latest_code")
+                    .remove("last_auto_copied_code")
+                    .apply();
             workerGeneration++;
             if (workerThread != null) {
                 workerThread.interrupt();
@@ -62,7 +68,7 @@ public class EmailFetcherService extends Service {
     private void runPollingLoop(long generation) {
         SharedPreferences prefs = getSharedPreferences("auto", MODE_PRIVATE);
         String lastError = null;
-        boolean needsMailboxRefresh = shouldCreateMailbox(prefs);
+        boolean needsMailboxRefresh = prefs.getBoolean("pending_force_refresh", false) || shouldCreateMailbox(prefs);
         saveServiceState(true, null);
 
         try {
@@ -79,6 +85,8 @@ public class EmailFetcherService extends Service {
                                 .putString("latest_email", email)
                                 .putString("latest_provider", provider)
                                 .remove("latest_code")
+                                .remove("last_auto_copied_code")
+                                .remove("pending_force_refresh")
                                 .putLong("last_sync", now)
                                 .putLong("mailbox_created_at", now)
                                 .putLong("mailbox_expires_at", now + mailboxLifetimeMs)

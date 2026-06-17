@@ -79,9 +79,11 @@ public class MainActivity extends AppCompatActivity {
         historyContainer = findViewById(R.id.history_container);
         MaterialButton btnService = findViewById(R.id.btn_start_service);
         MaterialButton btnRefresh = findViewById(R.id.btn_refresh);
+        MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
         MaterialButton btnTest = findViewById(R.id.btn_test_webview);
         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
+        MaterialButton btnClearCode = findViewById(R.id.btn_clear_code);
         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
@@ -107,12 +109,26 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
         });
 
+        btnToggleAutomation.setOnClickListener(v -> {
+            if (switchAutoFill.isChecked()) {
+                switchAutoFill.setChecked(false);
+            } else {
+                switchAutoFill.setChecked(true);
+            }
+            updateDashboard();
+        });
+
         btnRefresh.setOnClickListener(v -> {
+            prefs.edit()
+                    .putBoolean("pending_force_refresh", true)
+                    .remove("latest_code")
+                    .remove("last_auto_copied_code")
+                    .apply();
             if (!switchAutoFill.isChecked()) {
                 switchAutoFill.setChecked(true);
-            } else {
-                startEmailFetcher(true);
             }
+            startEmailFetcher(true);
+            updateDashboard();
             Toast.makeText(this, R.string.toast_refresh_started, Toast.LENGTH_SHORT).show();
         });
 
@@ -136,6 +152,15 @@ public class MainActivity extends AppCompatActivity {
                 prefs.getString("latest_code", ""),
                 R.string.toast_copied_code
         ));
+
+        btnClearCode.setOnClickListener(v -> {
+            prefs.edit()
+                    .remove("latest_code")
+                    .remove("last_auto_copied_code")
+                    .apply();
+            updateDashboard();
+            Toast.makeText(this, R.string.toast_code_cleared, Toast.LENGTH_SHORT).show();
+        });
 
         btnClearHistory.setOnClickListener(v -> {
             HistoryStorage.clear(prefs);
@@ -249,6 +274,8 @@ public class MainActivity extends AppCompatActivity {
         codeValue.setText(TextUtils.isEmpty(code) ? getString(R.string.placeholder_code) : code);
         providerValue.setText(TextUtils.isEmpty(provider) ? getString(R.string.placeholder_provider) : provider);
         mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
+        MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
+        btnToggleAutomation.setText(enabled ? R.string.button_stop_automation : R.string.button_start_automation);
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         btnLifetimePreset.setText(getLifetimeButtonText(mailboxLifetimeMinutes));
         lastSyncValue.setText(lastSync <= 0

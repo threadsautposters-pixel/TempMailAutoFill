@@ -101,6 +101,10 @@ public class TempMailApi {
             return null;
         }
 
+        String bestMessageId = null;
+        String bestCode = null;
+        String bestTimestamp = null;
+
         for (int i = 0; i < messages.length(); i++) {
             JSONObject message = messages.optJSONObject(i);
             if (message == null) {
@@ -117,10 +121,39 @@ public class TempMailApi {
             if (code == null) {
                 code = extractVerificationCode(fetchDownloadedMessage(messageId));
             }
-            if (code != null) {
-                lastMessageId = messageId;
-                return code;
+            if (code == null) {
+                continue;
             }
+
+            String timestamp = message.optString("createdAt", "");
+            if (timestamp.isEmpty()) {
+                timestamp = message.optString("updatedAt", "");
+            }
+
+            if (bestCode == null) {
+                bestMessageId = messageId;
+                bestCode = code;
+                bestTimestamp = timestamp;
+                continue;
+            }
+
+            if (timestamp.isEmpty() || bestTimestamp == null || bestTimestamp.isEmpty()) {
+                bestMessageId = messageId;
+                bestCode = code;
+                bestTimestamp = timestamp;
+                continue;
+            }
+
+            if (timestamp.compareTo(bestTimestamp) > 0) {
+                bestMessageId = messageId;
+                bestCode = code;
+                bestTimestamp = timestamp;
+            }
+        }
+
+        if (bestCode != null && bestMessageId != null) {
+            lastMessageId = bestMessageId;
+            return bestCode;
         }
 
         return null;
@@ -270,24 +303,48 @@ public class TempMailApi {
         }
 
         Matcher keywordMatcher = KEYWORD_CODE_PATTERN.matcher(normalized);
-        if (keywordMatcher.find()) {
-            return keywordMatcher.group(1);
+        String lastKeywordMatch = null;
+        while (keywordMatcher.find()) {
+            lastKeywordMatch = keywordMatcher.group(1);
+        }
+        if (lastKeywordMatch != null) {
+            return lastKeywordMatch;
         }
 
         Matcher alphanumericKeywordMatcher = ALPHANUMERIC_KEYWORD_CODE_PATTERN.matcher(normalized);
-        if (alphanumericKeywordMatcher.find()) {
-            return sanitizeCandidate(alphanumericKeywordMatcher.group(1));
+        String lastAlphaKeywordMatch = null;
+        while (alphanumericKeywordMatcher.find()) {
+            lastAlphaKeywordMatch = sanitizeCandidate(alphanumericKeywordMatcher.group(1));
+        }
+        if (lastAlphaKeywordMatch != null) {
+            return lastAlphaKeywordMatch;
         }
 
         Matcher numericMatcher = NUMERIC_CODE_PATTERN.matcher(normalized);
+        String bestCandidate = null;
+        int bestScore = -1;
         while (numericMatcher.find()) {
             String candidate = sanitizeCandidate(numericMatcher.group(1));
-            if (candidate != null && candidate.length() >= 4 && candidate.length() <= 8) {
-                return candidate;
+            if (candidate == null || candidate.length() < 4 || candidate.length() > 8) {
+                continue;
+            }
+
+            int score;
+            if (candidate.length() == 6) {
+                score = 3;
+            } else if (candidate.length() == 5) {
+                score = 2;
+            } else {
+                score = 1;
+            }
+
+            if (score > bestScore || (score == bestScore)) {
+                bestCandidate = candidate;
+                bestScore = score;
             }
         }
 
-        return null;
+        return bestCandidate;
     }
 
     private String extractVerificationCode(JSONObject detail) {
