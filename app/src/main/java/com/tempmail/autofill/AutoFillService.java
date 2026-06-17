@@ -34,15 +34,15 @@ public class AutoFillService extends AccessibilityService {
         String email = prefs.getString("latest_email", null);
         String code = prefs.getString("latest_code", null);
 
-        AccessibilityNodeInfo focusedNode = findBestTargetNode(root, event.getSource());
-        if (tryFillNode(focusedNode, email, code)) {
-            return;
-        }
-
         List<AccessibilityNodeInfo> fields = new ArrayList<>();
         collectEditableNodes(root, fields);
 
-        if (tryFillSegmentedCodeFields(fields, code)) {
+        AccessibilityNodeInfo focusedNode = findBestTargetNode(root, event.getSource());
+        if (tryFillSegmentedCodeFields(fields, focusedNode, code)) {
+            return;
+        }
+
+        if (tryFillNode(focusedNode, email, code)) {
             return;
         }
 
@@ -131,38 +131,57 @@ public class AutoFillService extends AccessibilityService {
                 || signature.contains("passcode");
     }
 
-    private boolean tryFillSegmentedCodeFields(List<AccessibilityNodeInfo> fields, String code) {
+    private boolean tryFillSegmentedCodeFields(
+            List<AccessibilityNodeInfo> fields,
+            AccessibilityNodeInfo focusedNode,
+            String code
+    ) {
         if (code == null || code.isEmpty()) {
             return false;
         }
 
         String normalizedCode = code.trim();
-        List<AccessibilityNodeInfo> codeFields = new ArrayList<>();
+        if (normalizedCode.length() < 4 || normalizedCode.length() > 8) {
+            return false;
+        }
+
+        List<AccessibilityNodeInfo> labeledCodeFields = new ArrayList<>();
+        List<AccessibilityNodeInfo> compactEditableFields = new ArrayList<>();
         for (AccessibilityNodeInfo node : fields) {
             if (!isEditableField(node)) {
                 continue;
             }
 
-            String signature = buildFieldSignature(node);
-            if (signature.isEmpty() || !shouldFillCode(signature)) {
+            CharSequence currentText = node.getText();
+            if (currentText != null && currentText.length() > 1) {
                 continue;
             }
 
-            CharSequence currentText = node.getText();
-            if (currentText != null && currentText.length() > 1) {
-                return false;
+            compactEditableFields.add(node);
+            String signature = buildFieldSignature(node);
+            if (!signature.isEmpty() && shouldFillCode(signature)) {
+                labeledCodeFields.add(node);
             }
-            codeFields.add(node);
         }
 
-        if (codeFields.size() < 4 || codeFields.size() > 8 || normalizedCode.length() != codeFields.size()) {
-            return false;
+        if (normalizedCode.length() == labeledCodeFields.size()) {
+            return fillSegmentedFields(labeledCodeFields, normalizedCode);
         }
 
+        String focusedSignature = buildFieldSignature(focusedNode);
+        boolean focusedLooksLikeCode = !focusedSignature.isEmpty() && shouldFillCode(focusedSignature);
+        if (focusedLooksLikeCode && normalizedCode.length() == compactEditableFields.size()) {
+            return fillSegmentedFields(compactEditableFields, normalizedCode);
+        }
+
+        return false;
+    }
+
+    private boolean fillSegmentedFields(List<AccessibilityNodeInfo> fields, String code) {
         boolean filledAny = false;
-        for (int i = 0; i < codeFields.size(); i++) {
-            AccessibilityNodeInfo node = codeFields.get(i);
-            String digit = String.valueOf(normalizedCode.charAt(i));
+        for (int i = 0; i < fields.size(); i++) {
+            AccessibilityNodeInfo node = fields.get(i);
+            String digit = String.valueOf(code.charAt(i));
             CharSequence existingText = node.getText();
             if (existingText != null && digit.contentEquals(existingText)) {
                 continue;
@@ -193,6 +212,9 @@ public class AutoFillService extends AccessibilityService {
         }
 
         if (shouldFillCode(signature) && code != null && !code.isEmpty()) {
+            if (currentValue.length() <= 1 && code.length() > 1) {
+                return false;
+            }
             if (code.equals(currentValue)) {
                 return false;
             }
