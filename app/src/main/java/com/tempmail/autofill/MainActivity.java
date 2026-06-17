@@ -9,6 +9,7 @@ import android.content.ComponentName;
 import android.content.res.ColorStateList;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -22,10 +23,14 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.NestedScrollView;
 
+import com.google.android.material.bottomappbar.BottomAppBar;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import java.util.Date;
@@ -48,6 +53,11 @@ public class MainActivity extends AppCompatActivity {
     private SharedPreferences prefs;
     private SwitchMaterial switchAutoCopy;
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
+    private NestedScrollView mainScroll;
+    private View historyAnchor;
+    private View automationAnchor;
+    private FloatingActionButton fabStartAutomation;
+    private AlertDialog accessibilityDialog;
     private final Runnable dashboardTicker = new Runnable() {
         @Override
         public void run() {
@@ -63,6 +73,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        mainScroll = findViewById(R.id.main_scroll);
+        historyAnchor = findViewById(R.id.anchor_history);
+        automationAnchor = findViewById(R.id.anchor_automation);
+        BottomAppBar bottomAppBar = findViewById(R.id.bottom_app_bar);
+        fabStartAutomation = findViewById(R.id.fab_start_automation);
 
         switchAutoFill = findViewById(R.id.switch_auto);
         statusBadge = findViewById(R.id.status_badge);
@@ -95,8 +111,8 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit().putBoolean("enabled", checked).apply();
             if (checked) startEmailFetcher(false);
             else stopEmailFetcher();
-            if (checked && !isAccessibilityServiceEnabled()) {
-                Toast.makeText(this, R.string.toast_accessibility_hint, Toast.LENGTH_SHORT).show();
+            if (checked) {
+                maybePromptAccessibilityRequired();
             }
             updateDashboard();
         });
@@ -117,6 +133,21 @@ public class MainActivity extends AppCompatActivity {
             }
             updateDashboard();
         });
+
+        if (fabStartAutomation != null) {
+            fabStartAutomation.setOnClickListener(v -> {
+                if (switchAutoFill.isChecked()) {
+                    switchAutoFill.setChecked(false);
+                } else {
+                    switchAutoFill.setChecked(true);
+                }
+                updateDashboard();
+            });
+        }
+
+        if (bottomAppBar != null) {
+            bottomAppBar.setOnMenuItemClickListener(item -> handleBottomNav(item.getItemId()));
+        }
 
         btnRefresh.setOnClickListener(v -> {
             prefs.edit()
@@ -190,6 +221,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        maybePromptAccessibilityRequired();
         updateDashboard();
     }
 
@@ -276,6 +308,12 @@ public class MainActivity extends AppCompatActivity {
         mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
         MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
         btnToggleAutomation.setText(enabled ? R.string.button_stop_automation : R.string.button_start_automation);
+        if (fabStartAutomation != null) {
+            fabStartAutomation.setImageResource(enabled ? R.drawable.ic_stop_24 : R.drawable.ic_play_24);
+            fabStartAutomation.setContentDescription(getString(
+                    enabled ? R.string.button_stop_automation : R.string.nav_start_automation
+            ));
+        }
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         btnLifetimePreset.setText(getLifetimeButtonText(mailboxLifetimeMinutes));
         lastSyncValue.setText(lastSync <= 0
@@ -284,6 +322,73 @@ public class MainActivity extends AppCompatActivity {
                 + " "
                 + DateFormat.getTimeFormat(this).format(new Date(lastSync)));
         renderHistory();
+    }
+
+    private boolean handleBottomNav(int itemId) {
+        if (itemId == R.id.nav_home) {
+            if (mainScroll != null) {
+                mainScroll.smoothScrollTo(0, 0);
+            }
+            return true;
+        }
+        if (itemId == R.id.nav_automation) {
+            scrollToAnchor(automationAnchor);
+            return true;
+        }
+        if (itemId == R.id.nav_history) {
+            scrollToAnchor(historyAnchor);
+            return true;
+        }
+        if (itemId == R.id.nav_settings) {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.fromParts("package", getPackageName(), null));
+            startActivity(intent);
+            return true;
+        }
+        return false;
+    }
+
+    private void scrollToAnchor(View anchor) {
+        if (mainScroll == null || anchor == null) {
+            return;
+        }
+        mainScroll.post(() -> mainScroll.smoothScrollTo(0, anchor.getTop()));
+    }
+
+    private void maybePromptAccessibilityRequired() {
+        boolean enabled = prefs != null && prefs.getBoolean("enabled", false);
+        if (!enabled) {
+            if (accessibilityDialog != null) {
+                accessibilityDialog.dismiss();
+                accessibilityDialog = null;
+            }
+            return;
+        }
+        if (isAccessibilityServiceEnabled()) {
+            if (accessibilityDialog != null) {
+                accessibilityDialog.dismiss();
+                accessibilityDialog = null;
+            }
+            return;
+        }
+        if (accessibilityDialog != null && accessibilityDialog.isShowing()) {
+            return;
+        }
+        accessibilityDialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.accessibility_required_title)
+                .setMessage(R.string.accessibility_required_message)
+                .setCancelable(false)
+                .setPositiveButton(R.string.accessibility_required_open, (dialog, which) -> {
+                    startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                })
+                .setNegativeButton(R.string.accessibility_required_disable, (dialog, which) -> {
+                    prefs.edit().putBoolean("enabled", false).apply();
+                    switchAutoFill.setChecked(false);
+                    stopEmailFetcher();
+                    updateDashboard();
+                })
+                .create();
+        accessibilityDialog.show();
     }
 
     private void setBadgeState(String text, int backgroundColorRes, int textColorRes) {

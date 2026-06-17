@@ -75,4 +75,15 @@
     <string name="notification_text_email_ready">Current mailbox ready: %1$s</string>
     <string name="notification_text_code_ready">Verification code ready: %1$s</string>
     <string name="notification_action_refresh">Refresh</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_automation">Automation</string>
+    <string name="nav_history">History</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_start_automation">Start automation</string>
+
+    <string name="accessibility_required_title">Accessibility required</string>
+    <string name="accessibility_required_message">Automation is enabled, but accessibility access is off. Turn it on so the app can fill email and verification codes in sign-up screens.</string>
+    <string name="accessibility_required_open">Open settings</string>
+    <string name="accessibility_required_disable">Turn off automation</string>
 </resources>

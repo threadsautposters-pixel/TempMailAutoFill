@@ -16,7 +16,9 @@ public class AutoFillService extends AccessibilityService {
         int eventType = event.getEventType();
         if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                 && eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                && eventType != AccessibilityEvent.TYPE_VIEW_CLICKED
                 && eventType != AccessibilityEvent.TYPE_VIEW_FOCUSED
+                && eventType != AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
                 && eventType != AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED) {
             return;
         }
@@ -71,6 +73,10 @@ public class AutoFillService extends AccessibilityService {
     }
 
     private AccessibilityNodeInfo findBestTargetNode(AccessibilityNodeInfo root, AccessibilityNodeInfo source) {
+        AccessibilityNodeInfo editableAncestor = findEditableAncestor(source);
+        if (isEditableField(editableAncestor)) {
+            return editableAncestor;
+        }
         if (isEditableField(source)) {
             return source;
         }
@@ -85,6 +91,20 @@ public class AutoFillService extends AccessibilityService {
             return focusedAccessibility;
         }
 
+        return null;
+    }
+
+    private AccessibilityNodeInfo findEditableAncestor(AccessibilityNodeInfo node) {
+        AccessibilityNodeInfo current = node;
+        for (int depth = 0; depth < 6; depth++) {
+            if (isEditableField(current)) {
+                return current;
+            }
+            if (current == null || current.getParent() == null) {
+                return null;
+            }
+            current = (AccessibilityNodeInfo) current.getParent();
+        }
         return null;
     }
 
@@ -119,7 +139,8 @@ public class AutoFillService extends AccessibilityService {
     private boolean shouldFillEmail(String signature) {
         return signature.contains("email")
                 || signature.contains("e-mail")
-                || signature.contains("mail");
+                || signature.contains("mail")
+                || signature.contains("email address");
     }
 
     private boolean shouldFillCode(String signature) {
@@ -212,7 +233,8 @@ public class AutoFillService extends AccessibilityService {
         }
 
         if (shouldFillCode(signature) && code != null && !code.isEmpty()) {
-            if (currentValue.length() <= 1 && code.length() > 1) {
+            int maxLen = node.getMaxTextLength();
+            if (maxLen > 0 && maxLen <= 2 && code.length() > maxLen && currentValue.length() <= 1) {
                 return false;
             }
             if (code.equals(currentValue)) {
