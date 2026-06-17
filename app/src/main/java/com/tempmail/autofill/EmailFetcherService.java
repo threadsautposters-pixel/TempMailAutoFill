@@ -253,7 +253,8 @@ public class EmailFetcherService extends Service {
                 .addAction(0, getString(R.string.notification_action_refresh), refreshPendingIntent)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW);
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
     }
 
     private void createNotificationChannel() {
