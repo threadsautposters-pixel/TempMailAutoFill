@@ -4,6 +4,8 @@
     <string name="dashboard_eyebrow">Verification Workspace</string>
     <string name="dashboard_title">A more powerful, professional temp mail dashboard</string>
     <string name="dashboard_subtitle">Track live mailbox state, review recent email history, keep autofill stable, and move through verification flows with less friction.</string>
+    <string name="section_home">Home</string>
+    <string name="section_history">History</string>
     <string name="card_overview_title">Control Center</string>
     <string name="card_overview_subtitle">Track readiness, inbox health, compatibility, and the latest values before opening a sign-up flow.</string>
     <string name="status_badge_off">Off</string>
@@ -17,11 +19,14 @@
     <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
     <string name="button_accessibility">Open accessibility settings</string>
     <string name="button_refresh">Refresh mailbox</string>
+    <string name="button_start_automation">Start automation</string>
+    <string name="button_stop_automation">Stop automation</string>
     <string name="button_test">Open test sign-up page</string>
     <string name="button_lifetime_default">Mailbox lifetime: 10 min</string>
     <string name="button_lifetime_format">Mailbox lifetime: %1$d min</string>
     <string name="button_copy_email">Copy email</string>
     <string name="button_copy_code">Copy code</string>
+    <string name="button_clear_code">Clear code</string>
     <string name="button_clear_history">Clear history</string>
     <string name="card_status_title">Live Status</string>
     <string name="label_accessibility">Accessibility</string>
@@ -59,6 +64,7 @@
     <string name="toast_copied_email">Email copied.</string>
     <string name="toast_copied_code">Verification code copied.</string>
     <string name="toast_copy_unavailable">Nothing available to copy yet.</string>
+    <string name="toast_code_cleared">Latest code cleared.</string>
     <string name="toast_lifetime_updated">Mailbox lifetime updated and refresh started.</string>
     <string name="status_error_prefix">Attention: </string>
     <string name="webview_title">Test Sign-up</string>
