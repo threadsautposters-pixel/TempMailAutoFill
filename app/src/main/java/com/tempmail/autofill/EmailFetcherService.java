@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.text.TextUtils;
@@ -27,6 +28,7 @@ public class EmailFetcherService extends Service {
     private static final String OTP_CHANNEL_ID = "otp_codes";
     private static final int NOTIFICATION_ID = 1001;
     private static final int OTP_NOTIFICATION_ID = 1002;
+    private static final int LINK_NOTIFICATION_ID = 1003;
     private static final long POLL_INTERVAL_MS = 3000L;
     private static final long ERROR_RETRY_MS = 5000L;
     private static final int DEFAULT_MAILBOX_LIFETIME_MINUTES = 10;
@@ -51,10 +53,14 @@ public class EmailFetcherService extends Service {
                     .edit()
                     .putBoolean("pending_force_refresh", true)
                     .remove("latest_code")
+                    .remove("latest_link")
                     .remove("last_auto_copied_code")
                     .remove("last_notified_code")
+                    .remove("last_notified_link")
                     .apply();
+            InboxStorage.clear(getSharedPreferences("auto", MODE_PRIVATE));
             dismissOtpNotification();
+            dismissLinkNotification();
             workerGeneration++;
             if (workerThread != null) {
                 workerThread.interrupt();
@@ -96,8 +102,10 @@ public class EmailFetcherService extends Service {
                                 .putString("latest_email", email)
                                 .putString("latest_provider", provider)
                                 .remove("latest_code")
+                                .remove("latest_link")
                                 .remove("last_auto_copied_code")
                                 .remove("last_notified_code")
+                                .remove("last_notified_link")
                                 .remove("pending_force_refresh")
                                 .putLong("last_sync", now)
                                 .putLong("mailbox_created_at", now)
@@ -105,27 +113,39 @@ public class EmailFetcherService extends Service {
                                 .remove("last_error")
                                 .apply();
                         HistoryStorage.recordEmail(prefs, email, provider, now);
-                        updateNotification(email, null);
+                        InboxStorage.clear(prefs);
+                        updateNotification(email, null, null);
                         dismissOtpNotification();
+                        dismissLinkNotification();
                         needsMailboxRefresh = false;
                     }
 
                     ensureApi(prefs, false);
-                    String code = api.fetchVerificationCode();
+                    TempMailApi.MailboxSnapshot mailboxSnapshot = api.fetchMailboxSnapshot();
                     SharedPreferences.Editor editor = prefs.edit()
                             .putBoolean("polling_active", true)
                             .putLong("last_sync", System.currentTimeMillis())
                             .remove("last_error");
 
-                    if (code != null && !code.trim().isEmpty()) {
-                        String trimmedCode = code.trim();
+                    InboxStorage.saveInbox(prefs, mailboxSnapshot.messages);
+
+                    if (mailboxSnapshot.latestCode != null && !mailboxSnapshot.latestCode.trim().isEmpty()) {
+                        String trimmedCode = mailboxSnapshot.latestCode.trim();
                         editor.putString("latest_code", trimmedCode);
                         maybeNotifyOtp(prefs, trimmedCode);
                         maybeAutoCopyCode(prefs, trimmedCode);
-                        updateNotification(prefs.getString("latest_email", ""), trimmedCode);
-                    } else {
-                        updateNotification(prefs.getString("latest_email", ""), prefs.getString("latest_code", ""));
                     }
+                    if (mailboxSnapshot.latestLink != null && !mailboxSnapshot.latestLink.trim().isEmpty()) {
+                        String trimmedLink = mailboxSnapshot.latestLink.trim();
+                        editor.putString("latest_link", trimmedLink);
+                        maybeNotifyLink(prefs, trimmedLink);
+                    }
+
+                    updateNotification(
+                            prefs.getString("latest_email", ""),
+                            mailboxSnapshot.latestCode,
+                            mailboxSnapshot.latestLink
+                    );
 
                     editor.apply();
                     lastError = null;
@@ -137,7 +157,7 @@ public class EmailFetcherService extends Service {
                     Log.e("Fetcher", "Mailbox loop error", loopError);
                     lastError = loopError.getMessage();
                     saveServiceState(true, lastError);
-                    updateNotification(prefs.getString("latest_email", ""), null);
+                    updateNotification(prefs.getString("latest_email", ""), null, null);
                     needsMailboxRefresh = true;
                     Thread.sleep(ERROR_RETRY_MS);
                 }
@@ -205,6 +225,20 @@ public class EmailFetcherService extends Service {
         postOtpNotification(code);
     }
 
+    private void maybeNotifyLink(SharedPreferences prefs, String link) {
+        if (!prefs.getBoolean("otp_detect_enabled", true) || TextUtils.isEmpty(link) || !canPostNotifications()) {
+            return;
+        }
+
+        String lastNotifiedLink = prefs.getString("last_notified_link", "");
+        if (link.equals(lastNotifiedLink)) {
+            return;
+        }
+
+        prefs.edit().putString("last_notified_link", link).apply();
+        postLinkNotification(link);
+    }
+
     @Override
     public void onDestroy() {
         serviceActive = false;
@@ -261,7 +295,7 @@ public class EmailFetcherService extends Service {
         }
     }
 
-    private void updateNotification(String email, String code) {
+    private void updateNotification(String email, String code, String link) {
         if (!canPostNotifications()) {
             return;
         }
@@ -270,15 +304,17 @@ public class EmailFetcherService extends Service {
             return;
         }
         try {
-            manager.notify(NOTIFICATION_ID, buildNotification(email, code));
+            manager.notify(NOTIFICATION_ID, buildNotification(email, code, link));
         } catch (SecurityException ignored) {
         }
     }
 
-    private Notification buildNotification(String email, String code) {
+    private Notification buildNotification(String email, String code, String link) {
         String contentText;
         if (!TextUtils.isEmpty(code)) {
             contentText = getString(R.string.notification_text_code_ready, code);
+        } else if (!TextUtils.isEmpty(link)) {
+            contentText = getString(R.string.notification_text_link_ready);
         } else if (!TextUtils.isEmpty(email)) {
             contentText = getString(R.string.notification_text_email_ready, email);
         } else {
@@ -309,7 +345,18 @@ public class EmailFetcherService extends Service {
                 pendingIntentFlags
         );
 
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
+        PendingIntent linkPendingIntent = null;
+        if (!TextUtils.isEmpty(link)) {
+            Intent openLinkIntent = buildOpenLinkIntent(link);
+            linkPendingIntent = PendingIntent.getActivity(
+                    this,
+                    4,
+                    openLinkIntent,
+                    pendingIntentFlags
+            );
+        }
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_notification)
                 .setContentTitle(getString(R.string.notification_title))
                 .setContentText(contentText)
@@ -318,7 +365,16 @@ public class EmailFetcherService extends Service {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
-                .build();
+                .setAutoCancel(false);
+
+        if (linkPendingIntent != null) {
+            builder.addAction(
+                    R.drawable.ic_bolt_24,
+                    getString(R.string.notification_action_open_link),
+                    linkPendingIntent
+            );
+        }
+        return builder.build();
     }
 
     private void postOtpNotification(String code) {
@@ -373,10 +429,66 @@ public class EmailFetcherService extends Service {
         }
     }
 
+    private void postLinkNotification(String link) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) {
+            return;
+        }
+
+        Intent openAppIntent = new Intent(this, MainActivity.class);
+        openAppIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        Intent openLinkIntent = buildOpenLinkIntent(link);
+
+        int pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            pendingIntentFlags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+
+        PendingIntent openPendingIntent = PendingIntent.getActivity(
+                this,
+                5,
+                openAppIntent,
+                pendingIntentFlags
+        );
+        PendingIntent linkPendingIntent = PendingIntent.getActivity(
+                this,
+                6,
+                openLinkIntent,
+                pendingIntentFlags
+        );
+
+        Notification notification = new NotificationCompat.Builder(this, OTP_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_notification)
+                .setContentTitle(getString(R.string.link_notification_title))
+                .setContentText(getString(R.string.link_notification_text))
+                .setContentIntent(openPendingIntent)
+                .addAction(
+                        R.drawable.ic_bolt_24,
+                        getString(R.string.link_notification_action_open),
+                        linkPendingIntent
+                )
+                .setAutoCancel(true)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .build();
+
+        try {
+            manager.notify(LINK_NOTIFICATION_ID, notification);
+        } catch (SecurityException ignored) {
+        }
+    }
+
     private void dismissOtpNotification() {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
             manager.cancel(OTP_NOTIFICATION_ID);
+        }
+    }
+
+    private void dismissLinkNotification() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.cancel(LINK_NOTIFICATION_ID);
         }
     }
 
@@ -417,6 +529,12 @@ public class EmailFetcherService extends Service {
         }
         return ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private Intent buildOpenLinkIntent(String link) {
+        Intent openLinkIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
+        openLinkIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return openLinkIntent;
     }
 
     private void ensureApi(SharedPreferences prefs, boolean resetIfMissing) {
