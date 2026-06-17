@@ -17,6 +17,7 @@
     <string name="switch_title">Enable automation</string>
     <string name="switch_subtitle">Start the temp inbox service and keep the latest email and code ready for autofill.</string>
     <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
+    <string name="switch_otp_alerts">Show instant OTP notifications</string>
     <string name="button_accessibility">Open accessibility settings</string>
     <string name="button_refresh">Refresh mailbox</string>
     <string name="button_start_automation">Start automation</string>
@@ -63,6 +64,7 @@
     <string name="toast_history_cleared">Email history cleared.</string>
     <string name="toast_copied_email">Email copied.</string>
     <string name="toast_copied_code">Verification code copied.</string>
+    <string name="toast_copied_code_prefix">Copied: %1$s</string>
     <string name="toast_copy_unavailable">Nothing available to copy yet.</string>
     <string name="toast_code_cleared">Latest code cleared.</string>
     <string name="toast_lifetime_updated">Mailbox lifetime updated and refresh started.</string>
@@ -77,6 +79,11 @@
     <string name="notification_text_email_ready">Current mailbox ready: %1$s</string>
     <string name="notification_text_code_ready">Verification code ready: %1$s</string>
     <string name="notification_action_refresh">Refresh</string>
+    <string name="otp_notification_channel_name">OTP alerts</string>
+    <string name="otp_notification_channel_description">Shows a quick-copy alert when a fresh verification code arrives.</string>
+    <string name="otp_notification_title">OTP ready: %1$s</string>
+    <string name="otp_notification_text">Open the app or tap copy to save it instantly.</string>
+    <string name="otp_notification_action_copy">Copy %1$s</string>
 
     <string name="nav_home">Home</string>
     <string name="nav_automation">Automation</string>

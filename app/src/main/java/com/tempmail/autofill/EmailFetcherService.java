@@ -24,7 +24,9 @@ public class EmailFetcherService extends Service {
     public static final String ACTION_FORCE_REFRESH = "com.tempmail.autofill.action.FORCE_REFRESH";
 
     private static final String CHANNEL_ID = "mailbox_monitoring";
+    private static final String OTP_CHANNEL_ID = "otp_codes";
     private static final int NOTIFICATION_ID = 1001;
+    private static final int OTP_NOTIFICATION_ID = 1002;
     private static final long POLL_INTERVAL_MS = 3000L;
     private static final long ERROR_RETRY_MS = 5000L;
     private static final int DEFAULT_MAILBOX_LIFETIME_MINUTES = 10;
@@ -50,7 +52,9 @@ public class EmailFetcherService extends Service {
                     .putBoolean("pending_force_refresh", true)
                     .remove("latest_code")
                     .remove("last_auto_copied_code")
+                    .remove("last_notified_code")
                     .apply();
+            dismissOtpNotification();
             workerGeneration++;
             if (workerThread != null) {
                 workerThread.interrupt();
@@ -93,6 +97,7 @@ public class EmailFetcherService extends Service {
                                 .putString("latest_provider", provider)
                                 .remove("latest_code")
                                 .remove("last_auto_copied_code")
+                                .remove("last_notified_code")
                                 .remove("pending_force_refresh")
                                 .putLong("last_sync", now)
                                 .putLong("mailbox_created_at", now)
@@ -101,6 +106,7 @@ public class EmailFetcherService extends Service {
                                 .apply();
                         HistoryStorage.recordEmail(prefs, email, provider, now);
                         updateNotification(email, null);
+                        dismissOtpNotification();
                         needsMailboxRefresh = false;
                     }
 
@@ -114,6 +120,7 @@ public class EmailFetcherService extends Service {
                     if (code != null && !code.trim().isEmpty()) {
                         String trimmedCode = code.trim();
                         editor.putString("latest_code", trimmedCode);
+                        maybeNotifyOtp(prefs, trimmedCode);
                         maybeAutoCopyCode(prefs, trimmedCode);
                         updateNotification(prefs.getString("latest_email", ""), trimmedCode);
                     } else {
@@ -182,6 +189,20 @@ public class EmailFetcherService extends Service {
             clipboardManager.setPrimaryClip(ClipData.newPlainText(getString(R.string.app_name), code));
             prefs.edit().putString("last_auto_copied_code", code).apply();
         }
+    }
+
+    private void maybeNotifyOtp(SharedPreferences prefs, String code) {
+        if (!prefs.getBoolean("otp_detect_enabled", true) || TextUtils.isEmpty(code) || !canPostNotifications()) {
+            return;
+        }
+
+        String lastNotifiedCode = prefs.getString("last_notified_code", "");
+        if (code.equals(lastNotifiedCode)) {
+            return;
+        }
+
+        prefs.edit().putString("last_notified_code", code).apply();
+        postOtpNotification(code);
     }
 
     @Override
@@ -300,23 +321,94 @@ public class EmailFetcherService extends Service {
                 .build();
     }
 
+    private void postOtpNotification(String code) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) {
+            return;
+        }
+
+        Intent openAppIntent = new Intent(this, MainActivity.class);
+        openAppIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+        Intent copyIntent = new Intent(this, CopyReceiver.class);
+        copyIntent.setAction(CopyReceiver.ACTION_COPY_OTP);
+        copyIntent.putExtra(CopyReceiver.EXTRA_OTP, code);
+
+        int pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            pendingIntentFlags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+
+        PendingIntent openPendingIntent = PendingIntent.getActivity(
+                this,
+                2,
+                openAppIntent,
+                pendingIntentFlags
+        );
+        PendingIntent copyPendingIntent = PendingIntent.getBroadcast(
+                this,
+                3,
+                copyIntent,
+                pendingIntentFlags
+        );
+
+        Notification notification = new NotificationCompat.Builder(this, OTP_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_notification)
+                .setContentTitle(getString(R.string.otp_notification_title, code))
+                .setContentText(getString(R.string.otp_notification_text))
+                .setContentIntent(openPendingIntent)
+                .addAction(
+                        R.drawable.ic_bolt_24,
+                        getString(R.string.otp_notification_action_copy, code),
+                        copyPendingIntent
+                )
+                .setAutoCancel(true)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .build();
+
+        try {
+            manager.notify(OTP_NOTIFICATION_ID, notification);
+        } catch (SecurityException ignored) {
+        }
+    }
+
+    private void dismissOtpNotification() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.cancel(OTP_NOTIFICATION_ID);
+        }
+    }
+
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
 
         NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager == null || manager.getNotificationChannel(CHANNEL_ID) != null) {
+        if (manager == null) {
             return;
         }
 
-        NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_LOW
-        );
-        channel.setDescription(getString(R.string.notification_channel_description));
-        manager.createNotificationChannel(channel);
+        if (manager.getNotificationChannel(CHANNEL_ID) == null) {
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    getString(R.string.notification_channel_name),
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            channel.setDescription(getString(R.string.notification_channel_description));
+            manager.createNotificationChannel(channel);
+        }
+
+        if (manager.getNotificationChannel(OTP_CHANNEL_ID) == null) {
+            NotificationChannel otpChannel = new NotificationChannel(
+                    OTP_CHANNEL_ID,
+                    getString(R.string.otp_notification_channel_name),
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            otpChannel.setDescription(getString(R.string.otp_notification_channel_description));
+            manager.createNotificationChannel(otpChannel);
+        }
     }
 
     private boolean canPostNotifications() {

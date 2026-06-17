@@ -54,6 +54,7 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout historyContainer;
     private SharedPreferences prefs;
     private SwitchMaterial switchAutoCopy;
+    private SwitchMaterial switchOtpAlerts;
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
     private NestedScrollView mainScroll;
     private View historyAnchor;
@@ -105,10 +106,12 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
+        switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
 
         prefs = getSharedPreferences("auto", MODE_PRIVATE);
         switchAutoFill.setChecked(prefs.getBoolean("enabled", false));
         switchAutoCopy.setChecked(prefs.getBoolean("auto_copy_code", false));
+        switchOtpAlerts.setChecked(prefs.getBoolean("otp_detect_enabled", true));
         switchAutoFill.setOnCheckedChangeListener((btn, checked) -> {
             prefs.edit().putBoolean("enabled", checked).apply();
             if (checked) startEmailFetcher(false);
@@ -120,6 +123,14 @@ public class MainActivity extends AppCompatActivity {
         });
         switchAutoCopy.setOnCheckedChangeListener((buttonView, checked) -> {
             prefs.edit().putBoolean("auto_copy_code", checked).apply();
+            updateDashboard();
+        });
+        switchOtpAlerts.setOnCheckedChangeListener((buttonView, checked) -> {
+            SharedPreferences.Editor editor = prefs.edit().putBoolean("otp_detect_enabled", checked);
+            if (!checked) {
+                editor.remove("last_notified_code");
+            }
+            editor.apply();
             updateDashboard();
         });
 
@@ -156,6 +167,7 @@ public class MainActivity extends AppCompatActivity {
                     .putBoolean("pending_force_refresh", true)
                     .remove("latest_code")
                     .remove("last_auto_copied_code")
+                    .remove("last_notified_code")
                     .apply();
             if (!switchAutoFill.isChecked()) {
                 switchAutoFill.setChecked(true);
@@ -180,8 +192,16 @@ public class MainActivity extends AppCompatActivity {
                 prefs.getString("latest_email", ""),
                 R.string.toast_copied_email
         ));
+        emailValue.setOnClickListener(v -> copyValue(
+                prefs.getString("latest_email", ""),
+                R.string.toast_copied_email
+        ));
 
         btnCopyCode.setOnClickListener(v -> copyValue(
+                prefs.getString("latest_code", ""),
+                R.string.toast_copied_code
+        ));
+        codeValue.setOnClickListener(v -> copyValue(
                 prefs.getString("latest_code", ""),
                 R.string.toast_copied_code
         ));
@@ -190,6 +210,7 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit()
                     .remove("latest_code")
                     .remove("last_auto_copied_code")
+                    .remove("last_notified_code")
                     .apply();
             updateDashboard();
             Toast.makeText(this, R.string.toast_code_cleared, Toast.LENGTH_SHORT).show();
@@ -261,6 +282,9 @@ public class MainActivity extends AppCompatActivity {
         if (switchAutoCopy.isChecked() != prefs.getBoolean("auto_copy_code", false)) {
             switchAutoCopy.setChecked(prefs.getBoolean("auto_copy_code", false));
         }
+        if (switchOtpAlerts.isChecked() != prefs.getBoolean("otp_detect_enabled", true)) {
+            switchOtpAlerts.setChecked(prefs.getBoolean("otp_detect_enabled", true));
+        }
 
         if (!enabled) {
             setBadgeState(
@@ -307,7 +331,7 @@ public class MainActivity extends AppCompatActivity {
 
         stabilityStatus.setText(R.string.value_stability);
         emailValue.setText(TextUtils.isEmpty(email) ? getString(R.string.placeholder_email) : email);
-        codeValue.setText(TextUtils.isEmpty(code) ? getString(R.string.placeholder_code) : code);
+        codeValue.setText(TextUtils.isEmpty(code) ? getString(R.string.placeholder_code) : formatCodeForDisplay(code));
         providerValue.setText(TextUtils.isEmpty(provider) ? getString(R.string.placeholder_provider) : provider);
         mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
         MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
@@ -516,6 +540,26 @@ public class MainActivity extends AppCompatActivity {
             return 15;
         }
         return 5;
+    }
+
+    private String formatCodeForDisplay(String code) {
+        if (TextUtils.isEmpty(code)) {
+            return getString(R.string.placeholder_code);
+        }
+
+        String trimmed = code.trim();
+        if (!trimmed.matches("\\d{6,8}")) {
+            return trimmed;
+        }
+
+        StringBuilder builder = new StringBuilder(trimmed.length() + 2);
+        for (int i = 0; i < trimmed.length(); i++) {
+            if (i > 0 && i % 3 == 0) {
+                builder.append(' ');
+            }
+            builder.append(trimmed.charAt(i));
+        }
+        return builder.toString();
     }
 
     private String getLifetimeButtonText(int minutes) {
