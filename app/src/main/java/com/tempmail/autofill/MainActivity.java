@@ -16,9 +16,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
+import android.text.InputType;
 import android.text.format.DateFormat;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -198,6 +200,8 @@ public class MainActivity extends AppCompatActivity {
             updateDashboard();
             Toast.makeText(this, R.string.toast_history_cleared, Toast.LENGTH_SHORT).show();
         });
+
+        providerValue.setOnClickListener(v -> showProviderDialog());
 
         requestNotificationPermissionIfNeeded();
         updateDashboard();
@@ -520,6 +524,73 @@ public class MainActivity extends AppCompatActivity {
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
+    }
+
+    private void showProviderDialog() {
+        if (prefs == null) {
+            return;
+        }
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = dpToPx(16);
+        layout.setPadding(padding, padding, padding, padding);
+
+        EditText nameInput = new EditText(this);
+        nameInput.setHint(R.string.provider_dialog_name_hint);
+        nameInput.setSingleLine(true);
+        nameInput.setText(prefs.getString("provider_name", TempMailApi.DEFAULT_PROVIDER_NAME));
+
+        EditText urlInput = new EditText(this);
+        urlInput.setHint(R.string.provider_dialog_url_hint);
+        urlInput.setSingleLine(true);
+        urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        urlInput.setText(prefs.getString("provider_base_url", TempMailApi.DEFAULT_BASE_URL));
+
+        layout.addView(nameInput);
+        layout.addView(urlInput);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.provider_dialog_title)
+                .setView(layout)
+                .setPositiveButton(R.string.provider_dialog_save, (dialog, which) -> {
+                    String providerName = nameInput.getText() == null ? "" : nameInput.getText().toString().trim();
+                    String baseUrl = urlInput.getText() == null ? "" : urlInput.getText().toString().trim();
+
+                    SharedPreferences.Editor editor = prefs.edit()
+                            .putBoolean("pending_force_refresh", true)
+                            .remove("latest_code")
+                            .remove("last_auto_copied_code");
+
+                    if (TextUtils.isEmpty(baseUrl)) {
+                        editor.remove("provider_base_url");
+                        editor.remove("provider_name");
+                    } else {
+                        editor.putString("provider_base_url", normalizeBaseUrl(baseUrl));
+                        if (TextUtils.isEmpty(providerName)) {
+                            editor.remove("provider_name");
+                        } else {
+                            editor.putString("provider_name", providerName);
+                        }
+                    }
+
+                    editor.apply();
+                    if (prefs.getBoolean("enabled", false)) {
+                        startEmailFetcher(true);
+                    }
+                    updateDashboard();
+                    Toast.makeText(this, R.string.toast_provider_updated, Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton(R.string.provider_dialog_cancel, null)
+                .show();
+    }
+
+    private String normalizeBaseUrl(String baseUrl) {
+        String normalized = baseUrl == null ? "" : baseUrl.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     private void requestNotificationPermissionIfNeeded() {

@@ -17,7 +17,8 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 public class TempMailApi {
-    private static final String BASE_URL = "https://api.mail.tm";
+    public static final String DEFAULT_BASE_URL = "https://api.mail.tm";
+    public static final String DEFAULT_PROVIDER_NAME = "Mail.tm";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final Pattern KEYWORD_CODE_PATTERN = Pattern.compile(
             "(?:code|otp|verification|verify|pin|passcode)[^0-9]{0,24}([0-9]{4,8})",
@@ -30,7 +31,9 @@ public class TempMailApi {
     private static final Pattern NUMERIC_CODE_PATTERN = Pattern.compile("\\b([0-9]{4,8})\\b");
 
     private String currentEmail;
-    private String currentProvider = "Mail.tm";
+    private String currentProvider = DEFAULT_PROVIDER_NAME;
+    private final String providerName;
+    private final String baseUrl;
     private String currentPassword;
     private String currentToken;
     private String currentAccountId;
@@ -38,6 +41,18 @@ public class TempMailApi {
     private final OkHttpClient client;
 
     public TempMailApi() {
+        this(DEFAULT_BASE_URL, DEFAULT_PROVIDER_NAME);
+    }
+
+    public TempMailApi(String baseUrl, String providerName) {
+        String normalizedBaseUrl = baseUrl == null ? "" : baseUrl.trim();
+        while (normalizedBaseUrl.endsWith("/")) {
+            normalizedBaseUrl = normalizedBaseUrl.substring(0, normalizedBaseUrl.length() - 1);
+        }
+        this.baseUrl = normalizedBaseUrl.isEmpty() ? DEFAULT_BASE_URL : normalizedBaseUrl;
+        String normalizedProviderName = providerName == null ? "" : providerName.trim();
+        this.providerName = normalizedProviderName.isEmpty() ? DEFAULT_PROVIDER_NAME : normalizedProviderName;
+        this.currentProvider = this.providerName;
         client = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(10, TimeUnit.SECONDS)
@@ -80,7 +95,7 @@ public class TempMailApi {
                 currentToken = fetchToken(address, password);
                 currentAccountId = fetchAccountId();
                 lastMessageId = null;
-                currentProvider = "Mail.tm";
+                currentProvider = providerName;
                 return currentEmail;
             } catch (IOException e) {
                 lastError = e;
@@ -233,7 +248,7 @@ public class TempMailApi {
 
     private String getResponseBody(String path, boolean authenticated) throws IOException {
         Request.Builder builder = new Request.Builder()
-                .url(BASE_URL + path)
+                .url(baseUrl + path)
                 .get()
                 .header("Accept", "application/ld+json, application/json;q=0.9, */*;q=0.8")
                 .header("User-Agent", "TempMailAutoFill/1.4");
@@ -253,7 +268,7 @@ public class TempMailApi {
     private JSONObject postJson(String path, JSONObject payload, boolean authenticated) throws IOException {
         RequestBody body = RequestBody.create(payload.toString(), JSON);
         Request.Builder builder = new Request.Builder()
-                .url(BASE_URL + path)
+                .url(baseUrl + path)
                 .post(body)
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
@@ -277,7 +292,7 @@ public class TempMailApi {
 
     private String fetchDownloadedMessage(String messageId) throws IOException {
         Request request = new Request.Builder()
-                .url(BASE_URL + "/messages/" + messageId + "/download")
+                .url(baseUrl + "/messages/" + messageId + "/download")
                 .get()
                 .header("Accept", "text/plain, message/rfc822, text/html, */*")
                 .header("Authorization", "Bearer " + currentToken)

@@ -1,5 +1,6 @@
 package com.tempmail.autofill;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -9,6 +10,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 import android.text.TextUtils;
@@ -26,7 +29,7 @@ public class EmailFetcherService extends Service {
     private static final long ERROR_RETRY_MS = 5000L;
     private static final int DEFAULT_MAILBOX_LIFETIME_MINUTES = 10;
 
-    private final TempMailApi api = new TempMailApi();
+    private TempMailApi api;
     private volatile boolean serviceActive;
     private volatile long workerGeneration;
     private Thread workerThread;
@@ -37,7 +40,9 @@ public class EmailFetcherService extends Service {
                 && (intent.getBooleanExtra("force_refresh", false)
                 || ACTION_FORCE_REFRESH.equals(intent.getAction()));
 
-        ensureForegroundNotification();
+        if (!ensureForegroundNotification()) {
+            return START_NOT_STICKY;
+        }
 
         if (forceRefresh) {
             getSharedPreferences("auto", MODE_PRIVATE)
@@ -67,6 +72,7 @@ public class EmailFetcherService extends Service {
 
     private void runPollingLoop(long generation) {
         SharedPreferences prefs = getSharedPreferences("auto", MODE_PRIVATE);
+        ensureApi(prefs, true);
         String lastError = null;
         boolean needsMailboxRefresh = prefs.getBoolean("pending_force_refresh", false) || shouldCreateMailbox(prefs);
         saveServiceState(true, null);
@@ -78,6 +84,7 @@ public class EmailFetcherService extends Service {
                 try {
                     if (needsMailboxRefresh || isMailboxExpired(prefs)) {
                         long now = System.currentTimeMillis();
+                        ensureApi(prefs, false);
                         String email = api.generateNewEmail();
                         String provider = api.getCurrentProviderName();
                         long mailboxLifetimeMs = getMailboxLifetimeMs(prefs);
@@ -97,6 +104,7 @@ public class EmailFetcherService extends Service {
                         needsMailboxRefresh = false;
                     }
 
+                    ensureApi(prefs, false);
                     String code = api.fetchVerificationCode();
                     SharedPreferences.Editor editor = prefs.edit()
                             .putBoolean("polling_active", true)
@@ -206,17 +214,44 @@ public class EmailFetcherService extends Service {
         editor.apply();
     }
 
-    private void ensureForegroundNotification() {
+    private boolean ensureForegroundNotification() {
         createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification(null, null));
+        if (!canPostNotifications()) {
+            saveServiceState(false, getString(R.string.error_notifications_required));
+            stopSelf();
+            return false;
+        }
+        try {
+            Notification notification = buildNotification(null, null);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                );
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+            return true;
+        } catch (SecurityException securityException) {
+            saveServiceState(false, getString(R.string.error_notifications_required));
+            stopSelf();
+            return false;
+        }
     }
 
     private void updateNotification(String email, String code) {
+        if (!canPostNotifications()) {
+            return;
+        }
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager == null) {
             return;
         }
-        manager.notify(NOTIFICATION_ID, buildNotification(email, code));
+        try {
+            manager.notify(NOTIFICATION_ID, buildNotification(email, code));
+        } catch (SecurityException ignored) {
+        }
     }
 
     private Notification buildNotification(String email, String code) {
@@ -282,5 +317,31 @@ public class EmailFetcherService extends Service {
         );
         channel.setDescription(getString(R.string.notification_channel_description));
         manager.createNotificationChannel(channel);
+    }
+
+    private boolean canPostNotifications() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return true;
+        }
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void ensureApi(SharedPreferences prefs, boolean resetIfMissing) {
+        String baseUrl = prefs.getString("provider_base_url", TempMailApi.DEFAULT_BASE_URL);
+        String providerName = prefs.getString("provider_name", TempMailApi.DEFAULT_PROVIDER_NAME);
+        if (baseUrl == null) {
+            baseUrl = TempMailApi.DEFAULT_BASE_URL;
+        }
+        if (providerName == null) {
+            providerName = TempMailApi.DEFAULT_PROVIDER_NAME;
+        }
+        if (api == null) {
+            api = new TempMailApi(baseUrl, providerName);
+            return;
+        }
+        if (resetIfMissing) {
+            api = new TempMailApi(baseUrl, providerName);
+        }
     }
 }

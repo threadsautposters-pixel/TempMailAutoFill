@@ -66,7 +66,9 @@
     <string name="toast_copy_unavailable">Nothing available to copy yet.</string>
     <string name="toast_code_cleared">Latest code cleared.</string>
     <string name="toast_lifetime_updated">Mailbox lifetime updated and refresh started.</string>
+    <string name="toast_provider_updated">Provider updated.</string>
     <string name="status_error_prefix">Attention: </string>
+    <string name="error_notifications_required">Notification permission is required to keep polling stable. Please enable notifications for the app.</string>
     <string name="webview_title">Test Sign-up</string>
     <string name="notification_channel_name">Mailbox monitoring</string>
     <string name="notification_channel_description">Keeps temp email polling stable while monitoring for verification codes.</string>
@@ -86,4 +88,10 @@
     <string name="accessibility_required_message">Automation is enabled, but accessibility access is off. Turn it on so the app can fill email and verification codes in sign-up screens.</string>
     <string name="accessibility_required_open">Open settings</string>
     <string name="accessibility_required_disable">Turn off automation</string>
+
+    <string name="provider_dialog_title">Provider settings</string>
+    <string name="provider_dialog_name_hint">Provider name (optional)</string>
+    <string name="provider_dialog_url_hint">Provider API base URL</string>
+    <string name="provider_dialog_save">Save</string>
+    <string name="provider_dialog_cancel">Cancel</string>
 </resources>
