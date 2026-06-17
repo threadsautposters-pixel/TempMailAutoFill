@@ -1,9 +1,14 @@
 package com.tempmail.autofill;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.accessibility.AccessibilityEvent;
@@ -20,12 +25,17 @@ public class AutoFillService extends AccessibilityService {
     private static final int CODE_SCORE_THRESHOLD = 140;
     private static final int AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD = 85;
     private static final int EMAIL_NEAR_BEST_DELTA = 25;
+    private static final long DEFERRED_SCAN_DELAY_MS = 180L;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable deferredScanRunnable = () -> attemptAutoFill(null);
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         int eventType = event.getEventType();
         if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                 && eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                && eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
                 && eventType != AccessibilityEvent.TYPE_VIEW_CLICKED
                 && eventType != AccessibilityEvent.TYPE_VIEW_FOCUSED
                 && eventType != AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
@@ -33,6 +43,30 @@ public class AutoFillService extends AccessibilityService {
             return;
         }
 
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                || eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                || eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            scheduleDeferredScan();
+        }
+
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                || eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+                || eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            return;
+        }
+
+        attemptAutoFill(event.getSource());
+    }
+
+    @Override
+    public void onInterrupt() {}
+
+    private void scheduleDeferredScan() {
+        handler.removeCallbacks(deferredScanRunnable);
+        handler.postDelayed(deferredScanRunnable, DEFERRED_SCAN_DELAY_MS);
+    }
+
+    private void attemptAutoFill(AccessibilityNodeInfo source) {
         SharedPreferences prefs = getSharedPreferences("auto", MODE_PRIVATE);
         if (!prefs.getBoolean("enabled", false)) {
             return;
@@ -50,16 +84,13 @@ public class AutoFillService extends AccessibilityService {
         List<AccessibilityNodeInfo> fields = new ArrayList<>();
         collectEditableNodes(root, fields);
 
-        AccessibilityNodeInfo focusedNode = findBestTargetNode(root, event.getSource());
+        AccessibilityNodeInfo focusedNode = findBestTargetNode(root, source);
         if (tryFillSegmentedCodeFields(fields, focusedNode, code)) {
             return;
         }
 
         tryFillBestCandidate(focusedNode, fields, windowSignature, email, code);
     }
-
-    @Override
-    public void onInterrupt() {}
 
     private void collectEditableNodes(AccessibilityNodeInfo node, List<AccessibilityNodeInfo> fields) {
         if (node == null) {
@@ -115,7 +146,10 @@ public class AutoFillService extends AccessibilityService {
         return node != null
                 && node.isEnabled()
                 && node.isVisibleToUser()
-                && (node.isEditable() || supportsSetText(node));
+                && (node.isEditable()
+                || supportsSetText(node)
+                || supportsPaste(node)
+                || looksLikeTextEntry(node));
     }
 
     private boolean supportsSetText(AccessibilityNodeInfo node) {
@@ -132,6 +166,37 @@ public class AutoFillService extends AccessibilityService {
             }
         }
         return false;
+    }
+
+    private boolean supportsPaste(AccessibilityNodeInfo node) {
+        if (node == null) {
+            return false;
+        }
+        List<AccessibilityNodeInfo.AccessibilityAction> actions = node.getActionList();
+        if (actions == null) {
+            return false;
+        }
+        for (AccessibilityNodeInfo.AccessibilityAction action : actions) {
+            if (action != null && action.getId() == AccessibilityNodeInfo.ACTION_PASTE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean looksLikeTextEntry(AccessibilityNodeInfo node) {
+        if (node == null) {
+            return false;
+        }
+        CharSequence className = node.getClassName();
+        if (className == null) {
+            return false;
+        }
+        String classNameValue = className.toString().toLowerCase(Locale.US);
+        return classNameValue.contains("edittext")
+                || classNameValue.contains("textfield")
+                || classNameValue.contains("textinput")
+                || classNameValue.contains("autocomplete");
     }
 
     private String buildFieldSignature(AccessibilityNodeInfo node) {
@@ -277,7 +342,14 @@ public class AutoFillService extends AccessibilityService {
                 || signature.contains("e mail")
                 || signature.contains("mail")
                 || signature.contains("email address")
+                || signature.contains("your email")
                 || signature.contains("mail address")
+                || signature.contains("email id")
+                || signature.contains("email or username")
+                || signature.contains("username or email")
+                || signature.contains("user id")
+                || signature.contains("userid")
+                || signature.contains("login id")
                 || signature.contains("correo")
                 || signature.contains("correo electronico")
                 || signature.contains("work email")
@@ -295,18 +367,56 @@ public class AutoFillService extends AccessibilityService {
     }
 
     private boolean isSignupContext(String signature) {
-        return signature.contains("sign up")
-                || signature.contains("signup")
-                || signature.contains("register")
-                || signature.contains("create account")
-                || signature.contains("create your account")
-                || signature.contains("join")
-                || signature.contains("get started")
-                || signature.contains("continue with email")
-                || signature.contains("start for free")
-                || signature.contains("free trial")
-                || signature.contains("open account")
-                || signature.contains("new account");
+        return scoreSignupContext(signature) >= 90;
+    }
+
+    private int scoreSignupContext(String signature) {
+        if (TextUtils.isEmpty(signature)) {
+            return 0;
+        }
+
+        int score = 0;
+        if (containsAny(
+                signature,
+                "sign up",
+                "signup",
+                "register",
+                "create account",
+                "create your account",
+                "join",
+                "get started",
+                "continue with email",
+                "start for free",
+                "free trial",
+                "open account",
+                "new account",
+                "create profile",
+                "new here"
+        )) {
+            score += 160;
+        }
+        if (containsAny(
+                signature,
+                "already have an account",
+                "terms of service",
+                "privacy policy",
+                "by continuing",
+                "continue",
+                "agree",
+                "welcome"
+        )) {
+            score += 40;
+        }
+        if (containsAny(signature, "email", "mail")) {
+            score += 20;
+        }
+        if (containsAny(signature, "password", "confirm password")) {
+            score += 15;
+        }
+        if (containsAny(signature, "sign in", "login", "log in", "welcome back", "forgot password")) {
+            score -= 80;
+        }
+        return score;
     }
 
     private boolean tryFillSegmentedCodeFields(
@@ -531,6 +641,7 @@ public class AutoFillService extends AccessibilityService {
         }
 
         int score = 0;
+        int signupScore = scoreSignupContext(windowSignature);
         if (shouldFillEmail(nodeContext)) {
             score += 200;
         }
@@ -538,7 +649,7 @@ public class AutoFillService extends AccessibilityService {
             score += 120;
         }
         if (containsAny(nodeContext, "username", "user name", "account", "login", "identifier")) {
-            score += isSignupContext(windowSignature) ? 95 : 25;
+            score += signupScore >= 90 ? 95 : 25;
         }
         if (containsAny(nodeContext, "first name", "last name", "full name", "display name", "nickname")) {
             score -= 240;
@@ -565,7 +676,7 @@ public class AutoFillService extends AccessibilityService {
         if (isEmailInputType(node.getInputType())) {
             score += 220;
         }
-        if (isPlainTextInputType(node.getInputType()) && isSignupContext(windowSignature)) {
+        if (isPlainTextInputType(node.getInputType()) && signupScore >= 90) {
             score += 45;
         }
         if (isNumericInputType(node.getInputType()) || isPasswordInputType(node.getInputType())) {
@@ -581,10 +692,10 @@ public class AutoFillService extends AccessibilityService {
         if (focused) {
             score += 35;
         }
-        if (isSignupContext(windowSignature)) {
+        if (signupScore >= 90) {
             score += 30;
         }
-        if (isSignupContext(windowSignature)
+        if (signupScore >= 90
                 && containsAny(
                 windowSignature,
                 "email",
@@ -596,6 +707,9 @@ public class AutoFillService extends AccessibilityService {
                 "continue with email"
         )) {
             score += 35;
+        }
+        if (signupScore >= 90 && looksLikeTextEntry(node)) {
+            score += 25;
         }
         return score;
     }
@@ -746,10 +860,51 @@ public class AutoFillService extends AccessibilityService {
         if (value.equals(getNodeValue(node))) {
             return false;
         }
-        Bundle args = new Bundle();
-        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
+
         node.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
-        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+        node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+
+        if (supportsSetText(node)) {
+            Bundle args = new Bundle();
+            args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
+            boolean setTextResult = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+            if (setTextResult || value.equals(getNodeValue(node))) {
+                return true;
+            }
+        }
+
+        return pasteNodeValue(node, value);
+    }
+
+    private boolean pasteNodeValue(AccessibilityNodeInfo node, String value) {
+        if (!supportsPaste(node)) {
+            return false;
+        }
+
+        ClipboardManager clipboardManager =
+                (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboardManager == null) {
+            return false;
+        }
+
+        final ClipData previousClip = clipboardManager.getPrimaryClip();
+        clipboardManager.setPrimaryClip(ClipData.newPlainText("TempMailAutoFill", value));
+        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+        node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        boolean pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+        handler.postDelayed(() -> restoreClipboard(clipboardManager, previousClip), 150L);
+        return pasted || value.equals(getNodeValue(node));
+    }
+
+    private void restoreClipboard(ClipboardManager clipboardManager, ClipData previousClip) {
+        if (clipboardManager == null) {
+            return;
+        }
+        if (previousClip != null) {
+            clipboardManager.setPrimaryClip(previousClip);
+        } else {
+            clipboardManager.setPrimaryClip(ClipData.newPlainText("", ""));
+        }
     }
 
     private static final class Candidate {
