@@ -302,27 +302,29 @@ public class TempMailApi {
             return null;
         }
 
+        VerificationCodeCandidate bestCandidate = null;
+
         Matcher keywordMatcher = KEYWORD_CODE_PATTERN.matcher(normalized);
-        String lastKeywordMatch = null;
         while (keywordMatcher.find()) {
-            lastKeywordMatch = keywordMatcher.group(1);
-        }
-        if (lastKeywordMatch != null) {
-            return lastKeywordMatch;
+            bestCandidate = chooseBetterCandidate(
+                    bestCandidate,
+                    sanitizeCandidate(keywordMatcher.group(1)),
+                    300,
+                    keywordMatcher.start(1)
+            );
         }
 
         Matcher alphanumericKeywordMatcher = ALPHANUMERIC_KEYWORD_CODE_PATTERN.matcher(normalized);
-        String lastAlphaKeywordMatch = null;
         while (alphanumericKeywordMatcher.find()) {
-            lastAlphaKeywordMatch = sanitizeCandidate(alphanumericKeywordMatcher.group(1));
-        }
-        if (lastAlphaKeywordMatch != null) {
-            return lastAlphaKeywordMatch;
+            bestCandidate = chooseBetterCandidate(
+                    bestCandidate,
+                    sanitizeCandidate(alphanumericKeywordMatcher.group(1)),
+                    250,
+                    alphanumericKeywordMatcher.start(1)
+            );
         }
 
         Matcher numericMatcher = NUMERIC_CODE_PATTERN.matcher(normalized);
-        String bestCandidate = null;
-        int bestScore = -1;
         while (numericMatcher.find()) {
             String candidate = sanitizeCandidate(numericMatcher.group(1));
             if (candidate == null || candidate.length() < 4 || candidate.length() > 8) {
@@ -331,20 +333,22 @@ public class TempMailApi {
 
             int score;
             if (candidate.length() == 6) {
-                score = 3;
+                score = 130;
             } else if (candidate.length() == 5) {
-                score = 2;
+                score = 120;
             } else {
-                score = 1;
+                score = 110;
             }
 
-            if (score > bestScore || (score == bestScore)) {
-                bestCandidate = candidate;
-                bestScore = score;
-            }
+            bestCandidate = chooseBetterCandidate(
+                    bestCandidate,
+                    candidate,
+                    score,
+                    numericMatcher.start(1)
+            );
         }
 
-        return bestCandidate;
+        return bestCandidate != null ? bestCandidate.value : null;
     }
 
     private String extractVerificationCode(JSONObject detail) {
@@ -379,6 +383,66 @@ public class TempMailApi {
         }
         String sanitized = candidate.trim().replaceAll("[^A-Za-z0-9]", "");
         return sanitized.isEmpty() ? null : sanitized;
+    }
+
+    private VerificationCodeCandidate chooseBetterCandidate(
+            VerificationCodeCandidate current,
+            String candidate,
+            int score,
+            int position
+    ) {
+        if (candidate == null) {
+            return current;
+        }
+
+        int adjustedScore = score;
+        if (!hasRepeatedSingleCharacter(candidate)) {
+            adjustedScore += 5;
+        }
+
+        VerificationCodeCandidate next = new VerificationCodeCandidate(candidate, adjustedScore, position);
+        if (current == null) {
+            return next;
+        }
+        if (next.score > current.score) {
+            return next;
+        }
+        if (next.score < current.score) {
+            return current;
+        }
+        if (next.position < current.position) {
+            return next;
+        }
+        if (next.position > current.position) {
+            return current;
+        }
+        return next.value.length() > current.value.length() ? next : current;
+    }
+
+    private boolean hasRepeatedSingleCharacter(String candidate) {
+        if (candidate == null || candidate.length() < 2) {
+            return false;
+        }
+
+        char first = candidate.charAt(0);
+        for (int i = 1; i < candidate.length(); i++) {
+            if (candidate.charAt(i) != first) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static final class VerificationCodeCandidate {
+        private final String value;
+        private final int score;
+        private final int position;
+
+        private VerificationCodeCandidate(String value, int score, int position) {
+            this.value = value;
+            this.score = score;
+            this.position = position;
+        }
     }
 
     private void appendIfPresent(StringBuilder builder, String value) {
