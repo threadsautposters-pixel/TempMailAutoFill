@@ -10,12 +10,16 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
 public class AutoFillService extends AccessibilityService {
-    private static final int EMAIL_SCORE_THRESHOLD = 140;
+    private static final int EMAIL_SCORE_THRESHOLD = 120;
     private static final int CODE_SCORE_THRESHOLD = 140;
+    private static final int AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD = 85;
+    private static final int EMAIL_NEAR_BEST_DELTA = 25;
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
@@ -110,6 +114,7 @@ public class AutoFillService extends AccessibilityService {
     private boolean canAcceptText(AccessibilityNodeInfo node) {
         return node != null
                 && node.isEnabled()
+                && node.isVisibleToUser()
                 && (node.isEditable() || supportsSetText(node));
     }
 
@@ -158,7 +163,44 @@ public class AutoFillService extends AccessibilityService {
                 appendNearbyNodeText(builder, grandParent, parent, 1);
             }
         }
+        appendSiblingText(builder, node);
+        appendAncestorText(builder, node, 3);
         return builder.toString().toLowerCase(Locale.US);
+    }
+
+    private void appendSiblingText(StringBuilder builder, AccessibilityNodeInfo node) {
+        if (node == null) {
+            return;
+        }
+        AccessibilityNodeInfo parent = node.getParent();
+        if (parent == null) {
+            return;
+        }
+
+        int childCount = parent.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            AccessibilityNodeInfo sibling = parent.getChild(i);
+            if (sibling == null || sibling == node) {
+                continue;
+            }
+            appendIfPresent(builder, sibling.getText());
+            appendIfPresent(builder, sibling.getContentDescription());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appendIfPresent(builder, sibling.getHintText());
+            }
+        }
+    }
+
+    private void appendAncestorText(StringBuilder builder, AccessibilityNodeInfo node, int maxDepth) {
+        AccessibilityNodeInfo current = node != null ? node.getParent() : null;
+        for (int depth = 0; depth < maxDepth && current != null; depth++) {
+            appendIfPresent(builder, current.getText());
+            appendIfPresent(builder, current.getContentDescription());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appendIfPresent(builder, current.getHintText());
+            }
+            current = current.getParent();
+        }
     }
 
     private void appendNearbyNodeText(
@@ -232,10 +274,15 @@ public class AutoFillService extends AccessibilityService {
     private boolean shouldFillEmail(String signature) {
         return signature.contains("email")
                 || signature.contains("e-mail")
+                || signature.contains("e mail")
                 || signature.contains("mail")
                 || signature.contains("email address")
                 || signature.contains("mail address")
-                || signature.contains("correo");
+                || signature.contains("correo")
+                || signature.contains("correo electronico")
+                || signature.contains("work email")
+                || signature.contains("business email")
+                || signature.contains("contact email");
     }
 
     private boolean shouldFillCode(String signature) {
@@ -255,7 +302,11 @@ public class AutoFillService extends AccessibilityService {
                 || signature.contains("create your account")
                 || signature.contains("join")
                 || signature.contains("get started")
-                || signature.contains("continue with email");
+                || signature.contains("continue with email")
+                || signature.contains("start for free")
+                || signature.contains("free trial")
+                || signature.contains("open account")
+                || signature.contains("new account");
     }
 
     private boolean tryFillSegmentedCodeFields(
@@ -328,8 +379,7 @@ public class AutoFillService extends AccessibilityService {
             return true;
         }
 
-        Candidate bestEmailCandidate = findBestEmailCandidate(fields, windowSignature);
-        if (bestEmailCandidate != null && fillNode(bestEmailCandidate.node, email)) {
+        if (fillLikelyEmailCandidates(fields, windowSignature, email)) {
             return true;
         }
 
@@ -363,29 +413,85 @@ public class AutoFillService extends AccessibilityService {
                 && fillNode(focusedNode, code);
     }
 
-    private Candidate findBestEmailCandidate(List<AccessibilityNodeInfo> fields, String windowSignature) {
-        Candidate best = null;
-        Candidate secondBest = null;
-        for (AccessibilityNodeInfo node : fields) {
-            String nodeContext = buildNodeContext(node);
-            int score = scoreEmailCandidate(node, nodeContext, windowSignature, false);
-            if (score < EMAIL_SCORE_THRESHOLD) {
-                continue;
+    private boolean fillLikelyEmailCandidates(
+            List<AccessibilityNodeInfo> fields,
+            String windowSignature,
+            String email
+    ) {
+        if (TextUtils.isEmpty(email)) {
+            return false;
+        }
+
+        List<Candidate> candidates = findEmailCandidates(fields, windowSignature, EMAIL_SCORE_THRESHOLD);
+        if (!candidates.isEmpty()) {
+            Candidate best = candidates.get(0);
+            boolean bestExplicit = isExplicitEmailCandidate(best.node, best.signature);
+            boolean filledAny = false;
+
+            for (Candidate candidate : candidates) {
+                boolean isBest = candidate == best;
+                boolean nearBest = candidate.score >= best.score - EMAIL_NEAR_BEST_DELTA;
+                boolean safeCompanion = isExplicitEmailCandidate(candidate.node, candidate.signature)
+                        || isEmailConfirmationField(candidate.signature);
+                if (isBest || (bestExplicit && nearBest && safeCompanion)) {
+                    filledAny |= fillNode(candidate.node, email);
+                }
             }
-            Candidate candidate = new Candidate(node, score);
-            if (best == null || candidate.score > best.score) {
-                secondBest = best;
-                best = candidate;
-            } else if (secondBest == null || candidate.score > secondBest.score) {
-                secondBest = candidate;
+
+            if (filledAny) {
+                return true;
             }
         }
 
-        if (best == null) {
-            return null;
+        Candidate aggressiveCandidate = findBestEmailCandidate(
+                fields,
+                windowSignature,
+                AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD
+        );
+        return aggressiveCandidate != null && fillNode(aggressiveCandidate.node, email);
+    }
+
+    private List<Candidate> findEmailCandidates(
+            List<AccessibilityNodeInfo> fields,
+            String windowSignature,
+            int threshold
+    ) {
+        List<Candidate> candidates = new ArrayList<>();
+        for (AccessibilityNodeInfo node : fields) {
+            String nodeContext = buildNodeContext(node);
+            int score = scoreEmailCandidate(node, nodeContext, windowSignature, false);
+            if (score < threshold) {
+                continue;
+            }
+            candidates.add(new Candidate(node, score, nodeContext));
         }
-        if (secondBest != null && best.score - secondBest.score < 25) {
-            return null;
+        Collections.sort(candidates, Comparator.comparingInt((Candidate candidate) -> candidate.score).reversed());
+        return candidates;
+    }
+
+    private Candidate findBestEmailCandidate(
+            List<AccessibilityNodeInfo> fields,
+            String windowSignature,
+            int threshold
+    ) {
+        Candidate best = null;
+        boolean signupContext = isSignupContext(windowSignature);
+        for (AccessibilityNodeInfo node : fields) {
+            String nodeContext = buildNodeContext(node);
+            int score = scoreEmailCandidate(node, nodeContext, windowSignature, false);
+            if (score < threshold) {
+                continue;
+            }
+            if (score < EMAIL_SCORE_THRESHOLD && !signupContext) {
+                continue;
+            }
+            if (score < EMAIL_SCORE_THRESHOLD && !isLikelySignupTextField(node, nodeContext, windowSignature)) {
+                continue;
+            }
+            Candidate candidate = new Candidate(node, score, nodeContext);
+            if (best == null || candidate.score > best.score) {
+                best = candidate;
+            }
         }
         return best;
     }
@@ -398,7 +504,7 @@ public class AutoFillService extends AccessibilityService {
             if (score < CODE_SCORE_THRESHOLD) {
                 continue;
             }
-            Candidate candidate = new Candidate(node, score);
+            Candidate candidate = new Candidate(node, score, nodeContext);
             if (best == null || candidate.score > best.score) {
                 best = candidate;
             }
@@ -426,19 +532,47 @@ public class AutoFillService extends AccessibilityService {
 
         int score = 0;
         if (shouldFillEmail(nodeContext)) {
-            score += 180;
+            score += 200;
+        }
+        if (isEmailConfirmationField(nodeContext)) {
+            score += 120;
         }
         if (containsAny(nodeContext, "username", "user name", "account", "login", "identifier")) {
-            score += isSignupContext(windowSignature) ? 60 : 20;
+            score += isSignupContext(windowSignature) ? 95 : 25;
         }
-        if (containsAny(nodeContext, "password", "passcode", "otp", "verification", "code", "search")) {
+        if (containsAny(nodeContext, "first name", "last name", "full name", "display name", "nickname")) {
+            score -= 240;
+        }
+        if (containsAny(
+                nodeContext,
+                "password",
+                "passcode",
+                "otp",
+                "verification",
+                "code",
+                "search",
+                "coupon",
+                "promo",
+                "referral",
+                "message",
+                "comment"
+        )) {
+            score -= 240;
+        }
+        if (containsAny(nodeContext, "phone", "mobile", "telephone", "tel")) {
             score -= 220;
         }
         if (isEmailInputType(node.getInputType())) {
             score += 220;
         }
+        if (isPlainTextInputType(node.getInputType()) && isSignupContext(windowSignature)) {
+            score += 45;
+        }
         if (isNumericInputType(node.getInputType()) || isPasswordInputType(node.getInputType())) {
             score -= 220;
+        }
+        if (isMultiLineInputType(node.getInputType())) {
+            score -= 180;
         }
         CharSequence className = node.getClassName();
         if (className != null && className.toString().toLowerCase(Locale.US).contains("edittext")) {
@@ -447,8 +581,21 @@ public class AutoFillService extends AccessibilityService {
         if (focused) {
             score += 35;
         }
-        if (isSignupContext(windowSignature) && containsAny(windowSignature, "email", "sign up", "register", "create account")) {
-            score += 25;
+        if (isSignupContext(windowSignature)) {
+            score += 30;
+        }
+        if (isSignupContext(windowSignature)
+                && containsAny(
+                windowSignature,
+                "email",
+                "mail",
+                "sign up",
+                "register",
+                "create account",
+                "join",
+                "continue with email"
+        )) {
+            score += 35;
         }
         return score;
     }
@@ -515,6 +662,53 @@ public class AutoFillService extends AccessibilityService {
         return false;
     }
 
+    private boolean isEmailConfirmationField(String signature) {
+        return containsAny(
+                signature,
+                "confirm email",
+                "confirmation email",
+                "re-enter email",
+                "repeat email",
+                "verify email"
+        );
+    }
+
+    private boolean isExplicitEmailCandidate(AccessibilityNodeInfo node, String signature) {
+        return shouldFillEmail(signature)
+                || isEmailConfirmationField(signature)
+                || isEmailInputType(node.getInputType());
+    }
+
+    private boolean isLikelySignupTextField(
+            AccessibilityNodeInfo node,
+            String nodeContext,
+            String windowSignature
+    ) {
+        if (!canAcceptText(node) || !isSignupContext(windowSignature)) {
+            return false;
+        }
+        if (!isPlainTextInputType(node.getInputType()) && !isEmailInputType(node.getInputType())) {
+            return false;
+        }
+        if (containsAny(
+                nodeContext,
+                "password",
+                "passcode",
+                "otp",
+                "verification",
+                "code",
+                "search",
+                "phone",
+                "mobile",
+                "first name",
+                "last name",
+                "full name"
+        )) {
+            return false;
+        }
+        return true;
+    }
+
     private boolean isEmailInputType(int inputType) {
         int variation = inputType & InputType.TYPE_MASK_VARIATION;
         return variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
@@ -533,6 +727,18 @@ public class AutoFillService extends AccessibilityService {
         return typeClass == InputType.TYPE_CLASS_NUMBER || typeClass == InputType.TYPE_CLASS_PHONE;
     }
 
+    private boolean isPlainTextInputType(int inputType) {
+        if (inputType == 0) {
+            return true;
+        }
+        int typeClass = inputType & InputType.TYPE_MASK_CLASS;
+        return typeClass == InputType.TYPE_CLASS_TEXT;
+    }
+
+    private boolean isMultiLineInputType(int inputType) {
+        return (inputType & InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0;
+    }
+
     private boolean fillNode(AccessibilityNodeInfo node, String value) {
         if (!canAcceptText(node) || TextUtils.isEmpty(value)) {
             return false;
@@ -549,10 +755,12 @@ public class AutoFillService extends AccessibilityService {
     private static final class Candidate {
         private final AccessibilityNodeInfo node;
         private final int score;
+        private final String signature;
 
-        private Candidate(AccessibilityNodeInfo node, int score) {
+        private Candidate(AccessibilityNodeInfo node, int score, String signature) {
             this.node = node;
             this.score = score;
+            this.signature = signature;
         }
     }
 }
