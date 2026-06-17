@@ -4,13 +4,20 @@ import android.accessibilityservice.AccessibilityService;
 import android.os.Build;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.graphics.Rect;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 public class AutoFillService extends AccessibilityService {
+    private static final int MAX_EDITABLE_NODES = 80;
+    private static final Pattern OTP_INDEX_PATTERN = Pattern.compile(".*(otp|code|pin|digit)[^0-9]*[0-9].*", Pattern.CASE_INSENSITIVE);
+
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
         int eventType = event.getEventType();
@@ -35,7 +42,7 @@ public class AutoFillService extends AccessibilityService {
         String code = prefs.getString("latest_code", null);
 
         List<AccessibilityNodeInfo> fields = new ArrayList<>();
-        collectEditableNodes(root, fields);
+        collectEditableNodes(root, fields, 0);
 
         AccessibilityNodeInfo focusedNode = findBestTargetNode(root, event.getSource());
         if (tryFillSegmentedCodeFields(fields, focusedNode, code)) {
@@ -56,18 +63,30 @@ public class AutoFillService extends AccessibilityService {
     @Override
     public void onInterrupt() {}
 
-    private void collectEditableNodes(AccessibilityNodeInfo node, List<AccessibilityNodeInfo> fields) {
+    private int collectEditableNodes(AccessibilityNodeInfo node, List<AccessibilityNodeInfo> fields, int collected) {
         if (node == null) {
-            return;
+            return collected;
+        }
+
+        if (collected >= MAX_EDITABLE_NODES) {
+            return collected;
         }
 
         if (isEditableField(node)) {
             fields.add(node);
+            collected++;
+            if (collected >= MAX_EDITABLE_NODES) {
+                return collected;
+            }
         }
 
         for (int i = 0; i < node.getChildCount(); i++) {
-            collectEditableNodes(node.getChild(i), fields);
+            collected = collectEditableNodes(node.getChild(i), fields, collected);
+            if (collected >= MAX_EDITABLE_NODES) {
+                return collected;
+            }
         }
+        return collected;
     }
 
     private AccessibilityNodeInfo findBestTargetNode(AccessibilityNodeInfo root, AccessibilityNodeInfo source) {
@@ -94,6 +113,7 @@ public class AutoFillService extends AccessibilityService {
 
     private String buildFieldSignature(AccessibilityNodeInfo node) {
         StringBuilder builder = new StringBuilder();
+        appendIfPresent(builder, node.getClassName());
         appendIfPresent(builder, node.getViewIdResourceName());
         appendIfPresent(builder, node.getText());
         appendIfPresent(builder, node.getContentDescription());
@@ -119,7 +139,10 @@ public class AutoFillService extends AccessibilityService {
     private boolean shouldFillEmail(String signature) {
         return signature.contains("email")
                 || signature.contains("e-mail")
-                || signature.contains("mail");
+                || signature.contains("mail")
+                || signature.contains("username")
+                || signature.contains("user name")
+                || signature.contains("login");
     }
 
     private boolean shouldFillCode(String signature) {
@@ -164,6 +187,9 @@ public class AutoFillService extends AccessibilityService {
             }
         }
 
+        sortNodesByScreenPosition(labeledCodeFields);
+        sortNodesByScreenPosition(compactEditableFields);
+
         if (normalizedCode.length() == labeledCodeFields.size()) {
             return fillSegmentedFields(labeledCodeFields, normalizedCode);
         }
@@ -175,6 +201,25 @@ public class AutoFillService extends AccessibilityService {
         }
 
         return false;
+    }
+
+    private void sortNodesByScreenPosition(List<AccessibilityNodeInfo> nodes) {
+        if (nodes == null || nodes.size() < 2) {
+            return;
+        }
+        Collections.sort(nodes, new Comparator<AccessibilityNodeInfo>() {
+            @Override
+            public int compare(AccessibilityNodeInfo left, AccessibilityNodeInfo right) {
+                Rect leftRect = new Rect();
+                Rect rightRect = new Rect();
+                left.getBoundsInScreen(leftRect);
+                right.getBoundsInScreen(rightRect);
+                if (leftRect.top != rightRect.top) {
+                    return Integer.compare(leftRect.top, rightRect.top);
+                }
+                return Integer.compare(leftRect.left, rightRect.left);
+            }
+        });
     }
 
     private boolean fillSegmentedFields(List<AccessibilityNodeInfo> fields, String code) {
@@ -205,23 +250,34 @@ public class AutoFillService extends AccessibilityService {
         String currentValue = existingText == null ? "" : existingText.toString().trim();
 
         if (shouldFillEmail(signature) && email != null && !email.isEmpty()) {
-            if (!currentValue.isEmpty()) {
+            boolean focused = node.isFocused();
+            if (!focused && !currentValue.isEmpty()) {
+                return false;
+            }
+            if (focused && !currentValue.isEmpty() && currentValue.contains("@")) {
                 return false;
             }
             return fillNode(node, email);
         }
 
         if (shouldFillCode(signature) && code != null && !code.isEmpty()) {
-            if (currentValue.length() <= 1 && code.length() > 1) {
+            if (code.equals(currentValue)) {
                 return false;
             }
-            if (code.equals(currentValue)) {
+            if (code.length() > 1 && currentValue.length() <= 1 && looksLikeSingleCharOtpField(signature)) {
                 return false;
             }
             return fillNode(node, code);
         }
 
         return false;
+    }
+
+    private boolean looksLikeSingleCharOtpField(String signature) {
+        if (signature == null || signature.isEmpty()) {
+            return false;
+        }
+        return OTP_INDEX_PATTERN.matcher(signature).matches();
     }
 
     private boolean fillNode(AccessibilityNodeInfo node, String value) {

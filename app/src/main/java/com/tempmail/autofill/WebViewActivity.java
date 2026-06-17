@@ -4,6 +4,7 @@ import android.os.Bundle;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class WebViewActivity extends AppCompatActivity {
@@ -11,20 +12,29 @@ public class WebViewActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        WebView webView = new WebView(this);
-        webView.setWebViewClient(new WebViewClient());
-        webView.getSettings().setJavaScriptEnabled(true);
-        webView.getSettings().setDomStorageEnabled(true);
-        setTitle(R.string.webview_title);
+        try {
+            WebView webView = new WebView(this);
+            webView.setWebViewClient(new WebViewClient());
+            webView.getSettings().setJavaScriptEnabled(true);
+            webView.getSettings().setDomStorageEnabled(true);
+            setTitle(R.string.webview_title);
 
-        webView.loadDataWithBaseURL(
-                "https://local.tempmail.autofill/",
-                buildDemoPage(),
-                "text/html",
-                "UTF-8",
-                null
-        );
-        setContentView(webView);
+            webView.loadDataWithBaseURL(
+                    "https://local.tempmail.autofill/",
+                    buildDemoPage(),
+                    "text/html",
+                    "UTF-8",
+                    null
+            );
+            setContentView(webView);
+        } catch (Throwable error) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.webview_unavailable_title)
+                    .setMessage(R.string.webview_unavailable_message)
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> finish())
+                    .setOnCancelListener(dialog -> finish())
+                    .show();
+        }
     }
 
     private String buildDemoPage() {

@@ -19,6 +19,7 @@
     <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
     <string name="button_accessibility">Open accessibility settings</string>
     <string name="button_refresh">Refresh mailbox</string>
+    <string name="button_new_email">New email</string>
     <string name="button_start_automation">Start automation</string>
     <string name="button_stop_automation">Stop automation</string>
     <string name="button_test">Open test sign-up page</string>
@@ -60,6 +61,7 @@
     <string name="step_three">3. Open the test page or your target sign-up flow and let the app assist.</string>
     <string name="toast_accessibility_hint">Accessibility access is still required for autofill to work.</string>
     <string name="toast_refresh_started">Mailbox refresh started.</string>
+    <string name="toast_new_email_started">Generating a new email…</string>
     <string name="toast_history_cleared">Email history cleared.</string>
     <string name="toast_copied_email">Email copied.</string>
     <string name="toast_copied_code">Verification code copied.</string>
@@ -68,6 +70,8 @@
     <string name="toast_lifetime_updated">Mailbox lifetime updated and refresh started.</string>
     <string name="status_error_prefix">Attention: </string>
     <string name="webview_title">Test Sign-up</string>
+    <string name="webview_unavailable_title">WebView unavailable</string>
+    <string name="webview_unavailable_message">WebView is disabled or missing on this device. Enable Android System WebView (or Chrome) and try again.</string>
     <string name="notification_channel_name">Mailbox monitoring</string>
     <string name="notification_channel_description">Keeps temp email polling stable while monitoring for verification codes.</string>
     <string name="notification_title">TempMail AutoFill is active</string>
@@ -75,4 +79,10 @@
     <string name="notification_text_email_ready">Current mailbox ready: %1$s</string>
     <string name="notification_text_code_ready">Verification code ready: %1$s</string>
     <string name="notification_action_refresh">Refresh</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_mailbox">Mailbox</string>
+    <string name="nav_automation">Automation</string>
+    <string name="nav_history">History</string>
+    <string name="nav_test">Test</string>
 </resources>

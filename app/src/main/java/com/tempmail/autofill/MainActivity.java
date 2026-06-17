@@ -19,12 +19,14 @@ import android.text.format.DateFormat;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
@@ -47,6 +49,8 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout historyContainer;
     private SharedPreferences prefs;
     private SwitchMaterial switchAutoCopy;
+    private ScrollView mainScroll;
+    private BottomNavigationView bottomNav;
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
     private final Runnable dashboardTicker = new Runnable() {
         @Override
@@ -82,11 +86,14 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
         MaterialButton btnTest = findViewById(R.id.btn_test_webview);
         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
+        MaterialButton btnNewEmail = findViewById(R.id.btn_new_email);
         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
         MaterialButton btnClearCode = findViewById(R.id.btn_clear_code);
         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
+        mainScroll = findViewById(R.id.main_scroll);
+        bottomNav = findViewById(R.id.bottom_nav);
 
         prefs = getSharedPreferences("auto", MODE_PRIVATE);
         switchAutoFill.setChecked(prefs.getBoolean("enabled", false));
@@ -135,6 +142,20 @@ public class MainActivity extends AppCompatActivity {
         btnTest.setOnClickListener(v -> {
             startActivity(new Intent(this, WebViewActivity.class));
         });
+
+        btnNewEmail.setOnClickListener(v -> {
+            prefs.edit()
+                    .putBoolean("pending_force_refresh", true)
+                    .remove("latest_code")
+                    .remove("last_auto_copied_code")
+                    .apply();
+            if (!switchAutoFill.isChecked()) {
+                switchAutoFill.setChecked(true);
+            }
+            startEmailFetcher(true);
+            updateDashboard();
+            Toast.makeText(this, R.string.toast_new_email_started, Toast.LENGTH_SHORT).show();
+        });
         btnLifetimePreset.setOnClickListener(v -> {
             int nextLifetime = getNextLifetimeMinutes();
             prefs.edit().putInt("mailbox_lifetime_minutes", nextLifetime).apply();
@@ -169,6 +190,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         requestNotificationPermissionIfNeeded();
+        setupBottomNavigation();
         updateDashboard();
     }
 
@@ -191,6 +213,44 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         updateDashboard();
+    }
+
+    private void setupBottomNavigation() {
+        if (bottomNav == null || mainScroll == null) {
+            return;
+        }
+        bottomNav.setSelectedItemId(R.id.nav_home);
+        bottomNav.setOnItemSelectedListener(item -> {
+            int itemId = item.getItemId();
+            if (itemId == R.id.nav_test) {
+                startActivity(new Intent(this, WebViewActivity.class));
+                return false;
+            }
+
+            int targetId;
+            if (itemId == R.id.nav_mailbox) {
+                targetId = R.id.card_mailbox;
+            } else if (itemId == R.id.nav_automation) {
+                targetId = R.id.card_automation;
+            } else if (itemId == R.id.nav_history) {
+                targetId = R.id.card_history;
+            } else {
+                targetId = R.id.card_overview;
+            }
+            scrollToView(targetId);
+            return true;
+        });
+    }
+
+    private void scrollToView(int viewId) {
+        if (mainScroll == null) {
+            return;
+        }
+        View target = findViewById(viewId);
+        if (target == null) {
+            return;
+        }
+        mainScroll.post(() -> mainScroll.smoothScrollTo(0, target.getTop()));
     }
 
     private void startEmailFetcher(boolean forceRefresh) {
