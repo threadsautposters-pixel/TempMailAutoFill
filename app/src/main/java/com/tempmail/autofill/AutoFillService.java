@@ -23,8 +23,10 @@ import java.util.Locale;
 public class AutoFillService extends AccessibilityService {
     private static final int EMAIL_SCORE_THRESHOLD = 120;
     private static final int CODE_SCORE_THRESHOLD = 140;
+    private static final int PASSWORD_SCORE_THRESHOLD = 150;
     private static final int AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD = 85;
     private static final int EMAIL_NEAR_BEST_DELTA = 25;
+    private static final int PASSWORD_NEAR_BEST_DELTA = 30;
     private static final long DEFERRED_SCAN_DELAY_MS = 180L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -79,6 +81,7 @@ public class AutoFillService extends AccessibilityService {
 
         String email = prefs.getString("latest_email", null);
         String code = prefs.getString("latest_code", null);
+        String savedPassword = prefs.getString("saved_password", null);
         boolean aggressiveSignupAutofill = prefs.getBoolean("aggressive_signup_autofill", false);
         String windowSignature = buildWindowSignature(root);
 
@@ -96,6 +99,7 @@ public class AutoFillService extends AccessibilityService {
                 windowSignature,
                 email,
                 code,
+                savedPassword,
                 aggressiveSignupAutofill
         );
     }
@@ -492,18 +496,24 @@ public class AutoFillService extends AccessibilityService {
             String windowSignature,
             String email,
             String code,
+            String savedPassword,
             boolean aggressiveSignupAutofill
     ) {
-        if (tryFillFocusedNode(focusedNode, windowSignature, email, code, aggressiveSignupAutofill)) {
-            return true;
-        }
-
-        if (fillLikelyEmailCandidates(fields, windowSignature, email, aggressiveSignupAutofill)) {
-            return true;
-        }
-
+        boolean filledAny = tryFillFocusedNode(
+                focusedNode,
+                windowSignature,
+                email,
+                code,
+                savedPassword,
+                aggressiveSignupAutofill
+        );
+        filledAny |= fillLikelyEmailCandidates(fields, windowSignature, email, aggressiveSignupAutofill);
+        filledAny |= fillLikelyPasswordCandidates(fields, windowSignature, savedPassword);
         Candidate bestCodeCandidate = findBestCodeCandidate(fields, windowSignature);
-        return bestCodeCandidate != null && fillNode(bestCodeCandidate.node, code);
+        if (bestCodeCandidate != null && fillNode(bestCodeCandidate.node, code)) {
+            filledAny = true;
+        }
+        return filledAny;
     }
 
     private boolean tryFillFocusedNode(
@@ -511,6 +521,7 @@ public class AutoFillService extends AccessibilityService {
             String windowSignature,
             String email,
             String code,
+            String savedPassword,
             boolean aggressiveSignupAutofill
     ) {
         if (!canAcceptText(focusedNode)) {
@@ -520,10 +531,12 @@ public class AutoFillService extends AccessibilityService {
         String nodeContext = buildNodeContext(focusedNode);
         int emailScore = scoreEmailCandidate(focusedNode, nodeContext, windowSignature, true);
         int codeScore = scoreCodeCandidate(focusedNode, nodeContext, windowSignature, true);
+        int passwordScore = scorePasswordCandidate(focusedNode, nodeContext, windowSignature, true);
 
         if (!TextUtils.isEmpty(email)
                 && emailScore >= EMAIL_SCORE_THRESHOLD
                 && emailScore >= codeScore
+                && emailScore >= passwordScore
                 && fillNode(focusedNode, email)) {
             return true;
         }
@@ -532,8 +545,16 @@ public class AutoFillService extends AccessibilityService {
                 && !TextUtils.isEmpty(email)
                 && emailScore >= AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD
                 && emailScore >= codeScore
+                && emailScore >= passwordScore
                 && isLikelySignupTextField(focusedNode, nodeContext, windowSignature)
                 && fillNode(focusedNode, email)) {
+            return true;
+        }
+
+        if (!TextUtils.isEmpty(savedPassword)
+                && passwordScore >= PASSWORD_SCORE_THRESHOLD
+                && passwordScore >= codeScore
+                && fillNode(focusedNode, savedPassword)) {
             return true;
         }
 
@@ -583,6 +604,35 @@ public class AutoFillService extends AccessibilityService {
                 AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD
         );
         return aggressiveCandidate != null && fillNode(aggressiveCandidate.node, email);
+    }
+
+    private boolean fillLikelyPasswordCandidates(
+            List<AccessibilityNodeInfo> fields,
+            String windowSignature,
+            String password
+    ) {
+        if (TextUtils.isEmpty(password)) {
+            return false;
+        }
+
+        List<Candidate> candidates = findPasswordCandidates(fields, windowSignature, PASSWORD_SCORE_THRESHOLD);
+        if (candidates.isEmpty()) {
+            return false;
+        }
+
+        Candidate best = candidates.get(0);
+        boolean bestExplicit = isExplicitPasswordCandidate(best.node, best.signature);
+        boolean filledAny = false;
+        for (Candidate candidate : candidates) {
+            boolean isBest = candidate == best;
+            boolean nearBest = candidate.score >= best.score - PASSWORD_NEAR_BEST_DELTA;
+            boolean safeCompanion = isExplicitPasswordCandidate(candidate.node, candidate.signature)
+                    || isPasswordConfirmationField(candidate.signature);
+            if (isBest || (bestExplicit && nearBest && safeCompanion)) {
+                filledAny |= fillNode(candidate.node, password);
+            }
+        }
+        return filledAny;
     }
 
     private List<Candidate> findEmailCandidates(
@@ -644,6 +694,24 @@ public class AutoFillService extends AccessibilityService {
             }
         }
         return best;
+    }
+
+    private List<Candidate> findPasswordCandidates(
+            List<AccessibilityNodeInfo> fields,
+            String windowSignature,
+            int threshold
+    ) {
+        List<Candidate> candidates = new ArrayList<>();
+        for (AccessibilityNodeInfo node : fields) {
+            String nodeContext = buildNodeContext(node);
+            int score = scorePasswordCandidate(node, nodeContext, windowSignature, false);
+            if (score < threshold) {
+                continue;
+            }
+            candidates.add(new Candidate(node, score, nodeContext));
+        }
+        Collections.sort(candidates, Comparator.comparingInt((Candidate candidate) -> candidate.score).reversed());
+        return candidates;
     }
 
     private int scoreEmailCandidate(
@@ -781,6 +849,64 @@ public class AutoFillService extends AccessibilityService {
         return score;
     }
 
+    private int scorePasswordCandidate(
+            AccessibilityNodeInfo node,
+            String nodeContext,
+            String windowSignature,
+            boolean focused
+    ) {
+        if (!canAcceptText(node)) {
+            return Integer.MIN_VALUE;
+        }
+        if (!getNodeValue(node).isEmpty()) {
+            return Integer.MIN_VALUE;
+        }
+
+        int score = 0;
+        int signupScore = scoreSignupContext(windowSignature);
+        if (shouldFillPassword(nodeContext)) {
+            score += 180;
+        }
+        if (isPasswordConfirmationField(nodeContext)) {
+            score += 110;
+        }
+        if (containsAny(nodeContext, "new password", "set password", "create password", "choose password")) {
+            score += 100;
+        }
+        if (containsAny(nodeContext, "current password", "old password")) {
+            score -= 260;
+        }
+        if (containsAny(nodeContext, "email", "mail", "otp", "verification", "code", "search", "phone", "name")) {
+            score -= 220;
+        }
+        if (isPasswordInputType(node.getInputType())) {
+            score += 220;
+        }
+        if (isEmailInputType(node.getInputType())) {
+            score -= 220;
+        }
+        if (isNumericInputType(node.getInputType()) && !containsAny(nodeContext, "pin", "passcode")) {
+            score -= 120;
+        }
+        if (isMultiLineInputType(node.getInputType())) {
+            score -= 180;
+        }
+        if (focused) {
+            score += 35;
+        }
+        if (signupScore >= 90) {
+            score += 30;
+        }
+        if (containsAny(windowSignature, "reset password", "set password", "confirm password", "new password")) {
+            score += 80;
+        }
+        if (containsAny(windowSignature, "sign in", "login", "log in", "welcome back")
+                && !containsAny(windowSignature, "reset password", "new password", "create account", "sign up")) {
+            score -= 110;
+        }
+        return score;
+    }
+
     private String getNodeValue(AccessibilityNodeInfo node) {
         if (node == null || node.getText() == null) {
             return "";
@@ -811,10 +937,39 @@ public class AutoFillService extends AccessibilityService {
         );
     }
 
+    private boolean shouldFillPassword(String signature) {
+        return containsAny(
+                signature,
+                "password",
+                "new password",
+                "set password",
+                "create password",
+                "choose password",
+                "confirm password",
+                "repeat password",
+                "re-enter password",
+                "verify password"
+        );
+    }
+
+    private boolean isPasswordConfirmationField(String signature) {
+        return containsAny(
+                signature,
+                "confirm password",
+                "repeat password",
+                "re-enter password",
+                "verify password"
+        );
+    }
+
     private boolean isExplicitEmailCandidate(AccessibilityNodeInfo node, String signature) {
         return shouldFillEmail(signature)
                 || isEmailConfirmationField(signature)
                 || isEmailInputType(node.getInputType());
+    }
+
+    private boolean isExplicitPasswordCandidate(AccessibilityNodeInfo node, String signature) {
+        return shouldFillPassword(signature) || isPasswordInputType(node.getInputType());
     }
 
     private boolean isLikelySignupTextField(

@@ -51,11 +51,15 @@ public class MainActivity extends AppCompatActivity {
     private TextView providerValue;
     private TextView mailboxCountdownValue;
     private TextView lastSyncValue;
+    private TextView inboxValue;
+    private TextView linkValue;
+    private TextView passwordStatusValue;
     private TextView historyEmpty;
     private LinearLayout historyContainer;
     private SharedPreferences prefs;
     private SwitchMaterial switchAutoCopy;
     private SwitchMaterial switchOtpAlerts;
+    private SwitchMaterial switchAutoOpenLinks;
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
     private NestedScrollView mainScroll;
     private View historyAnchor;
@@ -95,6 +99,9 @@ public class MainActivity extends AppCompatActivity {
         providerValue = findViewById(R.id.provider_value);
         mailboxCountdownValue = findViewById(R.id.mailbox_countdown_value);
         lastSyncValue = findViewById(R.id.last_sync_value);
+        inboxValue = findViewById(R.id.inbox_value);
+        linkValue = findViewById(R.id.link_value);
+        passwordStatusValue = findViewById(R.id.password_status_value);
         historyEmpty = findViewById(R.id.history_empty);
         historyContainer = findViewById(R.id.history_container);
         MaterialButton btnService = findViewById(R.id.btn_start_service);
@@ -103,18 +110,24 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnTest = findViewById(R.id.btn_test_webview);
         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
+        MaterialButton btnOpenLink = findViewById(R.id.btn_open_link);
+        MaterialButton btnCopyLink = findViewById(R.id.btn_copy_link);
         MaterialButton btnClearCode = findViewById(R.id.btn_clear_code);
         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
+        MaterialButton btnSetPassword = findViewById(R.id.btn_set_password);
+        MaterialButton btnClearPassword = findViewById(R.id.btn_clear_password);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
         switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
         switchAggressiveSignup = findViewById(R.id.switch_aggressive_signup);
+        switchAutoOpenLinks = findViewById(R.id.switch_auto_open_links);
 
         prefs = getSharedPreferences("auto", MODE_PRIVATE);
         switchAutoFill.setChecked(prefs.getBoolean("enabled", false));
         switchAutoCopy.setChecked(prefs.getBoolean("auto_copy_code", false));
         switchOtpAlerts.setChecked(prefs.getBoolean("otp_detect_enabled", true));
         switchAggressiveSignup.setChecked(prefs.getBoolean("aggressive_signup_autofill", false));
+        switchAutoOpenLinks.setChecked(prefs.getBoolean("auto_open_links", false));
         switchAutoFill.setOnCheckedChangeListener((btn, checked) -> {
             prefs.edit().putBoolean("enabled", checked).apply();
             if (checked) startEmailFetcher(false);
@@ -138,6 +151,10 @@ public class MainActivity extends AppCompatActivity {
         });
         switchAggressiveSignup.setOnCheckedChangeListener((buttonView, checked) -> {
             prefs.edit().putBoolean("aggressive_signup_autofill", checked).apply();
+            updateDashboard();
+        });
+        switchAutoOpenLinks.setOnCheckedChangeListener((buttonView, checked) -> {
+            prefs.edit().putBoolean("auto_open_links", checked).apply();
             updateDashboard();
         });
 
@@ -173,7 +190,13 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit()
                     .putBoolean("pending_force_refresh", true)
                     .remove("latest_code")
+                    .remove("latest_link")
+                    .remove("latest_message_subject")
+                    .remove("latest_message_preview")
+                    .remove("latest_message_sender")
+                    .remove("latest_message_timestamp")
                     .remove("last_auto_copied_code")
+                    .remove("last_auto_opened_link")
                     .remove("last_notified_code")
                     .apply();
             if (!switchAutoFill.isChecked()) {
@@ -212,6 +235,12 @@ public class MainActivity extends AppCompatActivity {
                 prefs.getString("latest_code", ""),
                 R.string.toast_copied_code
         ));
+        btnOpenLink.setOnClickListener(v -> openLatestLink());
+        btnCopyLink.setOnClickListener(v -> copyValue(
+                prefs.getString("latest_link", ""),
+                R.string.toast_copied_link
+        ));
+        linkValue.setOnClickListener(v -> openLatestLink());
 
         btnClearCode.setOnClickListener(v -> {
             prefs.edit()
@@ -227,6 +256,12 @@ public class MainActivity extends AppCompatActivity {
             HistoryStorage.clear(prefs);
             updateDashboard();
             Toast.makeText(this, R.string.toast_history_cleared, Toast.LENGTH_SHORT).show();
+        });
+        btnSetPassword.setOnClickListener(v -> showPasswordDialog());
+        btnClearPassword.setOnClickListener(v -> {
+            prefs.edit().remove("saved_password").apply();
+            updateDashboard();
+            Toast.makeText(this, R.string.toast_password_cleared, Toast.LENGTH_SHORT).show();
         });
 
         providerValue.setOnClickListener(v -> showProviderDialog());
@@ -278,6 +313,11 @@ public class MainActivity extends AppCompatActivity {
         String email = prefs.getString("latest_email", "");
         String code = prefs.getString("latest_code", "");
         String provider = prefs.getString("latest_provider", "");
+        String latestLink = prefs.getString("latest_link", "");
+        String messageSubject = prefs.getString("latest_message_subject", "");
+        String messagePreview = prefs.getString("latest_message_preview", "");
+        String messageSender = prefs.getString("latest_message_sender", "");
+        String savedPassword = prefs.getString("saved_password", "");
         String lastError = prefs.getString("last_error", "");
         long lastSync = prefs.getLong("last_sync", 0L);
         long mailboxExpiresAt = prefs.getLong("mailbox_expires_at", 0L);
@@ -294,6 +334,9 @@ public class MainActivity extends AppCompatActivity {
         }
         if (switchAggressiveSignup.isChecked() != prefs.getBoolean("aggressive_signup_autofill", false)) {
             switchAggressiveSignup.setChecked(prefs.getBoolean("aggressive_signup_autofill", false));
+        }
+        if (switchAutoOpenLinks.isChecked() != prefs.getBoolean("auto_open_links", false)) {
+            switchAutoOpenLinks.setChecked(prefs.getBoolean("auto_open_links", false));
         }
 
         if (!enabled) {
@@ -344,6 +387,13 @@ public class MainActivity extends AppCompatActivity {
         codeValue.setText(TextUtils.isEmpty(code) ? getString(R.string.placeholder_code) : formatCodeForDisplay(code));
         providerValue.setText(TextUtils.isEmpty(provider) ? getString(R.string.placeholder_provider) : provider);
         mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
+        inboxValue.setText(formatInboxMessage(messageSubject, messagePreview, messageSender));
+        linkValue.setText(TextUtils.isEmpty(latestLink) ? getString(R.string.placeholder_link) : latestLink);
+        passwordStatusValue.setText(
+                TextUtils.isEmpty(savedPassword)
+                        ? R.string.password_status_empty
+                        : R.string.password_status_ready
+        );
         MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
         btnToggleAutomation.setText(enabled ? R.string.button_stop_automation : R.string.button_start_automation);
         if (fabStartAutomation != null) {
@@ -464,6 +514,19 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, successMessageRes, Toast.LENGTH_SHORT).show();
     }
 
+    private void openLatestLink() {
+        String latestLink = prefs.getString("latest_link", "");
+        if (TextUtils.isEmpty(latestLink)) {
+            Toast.makeText(this, R.string.toast_invalid_link, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(latestLink)));
+        } catch (Exception error) {
+            Toast.makeText(this, R.string.toast_link_open_failed, Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void renderHistory() {
         historyContainer.removeAllViews();
         java.util.List<HistoryStorage.HistoryEntry> historyEntries = HistoryStorage.getHistory(prefs);
@@ -576,6 +639,30 @@ public class MainActivity extends AppCompatActivity {
         return getString(R.string.button_lifetime_format, minutes);
     }
 
+    private String formatInboxMessage(String subject, String preview, String sender) {
+        if (TextUtils.isEmpty(subject) && TextUtils.isEmpty(preview) && TextUtils.isEmpty(sender)) {
+            return getString(R.string.placeholder_inbox_message);
+        }
+
+        StringBuilder builder = new StringBuilder();
+        if (!TextUtils.isEmpty(subject)) {
+            builder.append(subject.trim());
+        }
+        if (!TextUtils.isEmpty(sender)) {
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(sender.trim());
+        }
+        if (!TextUtils.isEmpty(preview)) {
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(preview.trim());
+        }
+        return builder.toString();
+    }
+
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
@@ -614,6 +701,10 @@ public class MainActivity extends AppCompatActivity {
                     SharedPreferences.Editor editor = prefs.edit()
                             .putBoolean("pending_force_refresh", true)
                             .remove("latest_code")
+                            .remove("latest_link")
+                            .remove("latest_message_subject")
+                            .remove("latest_message_preview")
+                            .remove("latest_message_sender")
                             .remove("last_auto_copied_code");
 
                     if (TextUtils.isEmpty(baseUrl)) {
@@ -637,6 +728,58 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .setNegativeButton(R.string.provider_dialog_cancel, null)
                 .show();
+    }
+
+    private void showPasswordDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = dpToPx(16);
+        layout.setPadding(padding, padding, padding, padding);
+
+        EditText passwordInput = new EditText(this);
+        passwordInput.setHint(R.string.password_dialog_password_hint);
+        passwordInput.setSingleLine(true);
+        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+
+        EditText repeatPasswordInput = new EditText(this);
+        repeatPasswordInput.setHint(R.string.password_dialog_repeat_hint);
+        repeatPasswordInput.setSingleLine(true);
+        repeatPasswordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        repeatPasswordInput.setPadding(0, dpToPx(12), 0, 0);
+
+        String existingPassword = prefs.getString("saved_password", "");
+        if (!TextUtils.isEmpty(existingPassword)) {
+            passwordInput.setText(existingPassword);
+            repeatPasswordInput.setText(existingPassword);
+        }
+
+        layout.addView(passwordInput);
+        layout.addView(repeatPasswordInput);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.password_dialog_title)
+                .setView(layout)
+                .setPositiveButton(R.string.provider_dialog_save, null)
+                .setNegativeButton(R.string.provider_dialog_cancel, null)
+                .create();
+        dialog.setOnShowListener(dialogInterface -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    String password = passwordInput.getText() == null
+                            ? ""
+                            : passwordInput.getText().toString();
+                    String repeatedPassword = repeatPasswordInput.getText() == null
+                            ? ""
+                            : repeatPasswordInput.getText().toString();
+                    if (TextUtils.isEmpty(password) || !TextUtils.equals(password, repeatedPassword)) {
+                        Toast.makeText(this, R.string.toast_password_mismatch, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    prefs.edit().putString("saved_password", password).apply();
+                    updateDashboard();
+                    Toast.makeText(this, R.string.toast_password_saved, Toast.LENGTH_SHORT).show();
+                    dialog.dismiss();
+                }));
+        dialog.show();
     }
 
     private String normalizeBaseUrl(String baseUrl) {

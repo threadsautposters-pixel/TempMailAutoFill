@@ -4,8 +4,13 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,6 +34,9 @@ public class TempMailApi {
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern NUMERIC_CODE_PATTERN = Pattern.compile("\\b([0-9]{4,8})\\b");
+    private static final Pattern URL_PATTERN = Pattern.compile(
+            "(?i)\\bhttps?://[\\p{Alnum}\\-._~:/?#\\[\\]@!$&'()*+,;=%]+"
+    );
 
     private String currentEmail;
     private String currentProvider = DEFAULT_PROVIDER_NAME;
@@ -106,6 +114,11 @@ public class TempMailApi {
     }
 
     public String fetchVerificationCode() throws IOException {
+        InboxUpdate update = fetchLatestInboxUpdate();
+        return update != null ? update.verificationCode : null;
+    }
+
+    public InboxUpdate fetchLatestInboxUpdate() throws IOException {
         if (currentToken == null || currentToken.isEmpty()) {
             return null;
         }
@@ -116,9 +129,9 @@ public class TempMailApi {
             return null;
         }
 
-        String bestMessageId = null;
-        String bestCode = null;
-        String bestTimestamp = null;
+        String newestSeenMessageId = null;
+        InboxUpdate newestMessage = null;
+        InboxUpdate newestActionableMessage = null;
 
         for (int i = 0; i < messages.length(); i++) {
             JSONObject message = messages.optJSONObject(i);
@@ -127,51 +140,43 @@ public class TempMailApi {
             }
 
             String messageId = message.optString("id", "");
-            if (messageId.isEmpty() || messageId.equals(lastMessageId)) {
+            if (messageId.isEmpty()) {
                 continue;
+            }
+            if (messageId.equals(lastMessageId)) {
+                break;
+            }
+
+            if (newestSeenMessageId == null) {
+                newestSeenMessageId = messageId;
             }
 
             JSONObject detail = getJson("/messages/" + messageId, true);
+            String downloadedMessage = fetchDownloadedMessage(messageId);
             String code = extractVerificationCode(detail);
             if (code == null) {
-                code = extractVerificationCode(fetchDownloadedMessage(messageId));
+                code = extractVerificationCode(downloadedMessage);
             }
-            if (code == null) {
-                continue;
-            }
-
-            String timestamp = message.optString("createdAt", "");
-            if (timestamp.isEmpty()) {
-                timestamp = message.optString("updatedAt", "");
+            String link = extractPrimaryLink(detail);
+            if (link == null) {
+                link = extractPrimaryLink(downloadedMessage);
             }
 
-            if (bestCode == null) {
-                bestMessageId = messageId;
-                bestCode = code;
-                bestTimestamp = timestamp;
-                continue;
+            InboxUpdate candidate = buildInboxUpdate(messageId, message, detail, code, link);
+            if (newestMessage == null) {
+                newestMessage = candidate;
             }
-
-            if (timestamp.isEmpty() || bestTimestamp == null || bestTimestamp.isEmpty()) {
-                bestMessageId = messageId;
-                bestCode = code;
-                bestTimestamp = timestamp;
-                continue;
-            }
-
-            if (timestamp.compareTo(bestTimestamp) > 0) {
-                bestMessageId = messageId;
-                bestCode = code;
-                bestTimestamp = timestamp;
+            if (newestActionableMessage == null && candidate.hasAutofillTarget()) {
+                newestActionableMessage = candidate;
             }
         }
 
-        if (bestCode != null && bestMessageId != null) {
-            lastMessageId = bestMessageId;
-            return bestCode;
+        if (newestSeenMessageId == null) {
+            return null;
         }
 
-        return null;
+        lastMessageId = newestSeenMessageId;
+        return newestActionableMessage != null ? newestActionableMessage : newestMessage;
     }
 
     private JSONArray fetchDomains() throws IOException {
@@ -307,6 +312,33 @@ public class TempMailApi {
         }
     }
 
+    private InboxUpdate buildInboxUpdate(
+            String messageId,
+            JSONObject message,
+            JSONObject detail,
+            String code,
+            String link
+    ) {
+        String subject = firstNonEmpty(
+                detail.optString("subject", ""),
+                message.optString("subject", "")
+        );
+        String preview = trimPreview(firstNonEmpty(
+                detail.optString("intro", ""),
+                detail.optString("text", ""),
+                detail.optString("htmlAsText", ""),
+                message.optString("intro", "")
+        ));
+        String sender = extractSender(detail, message);
+        String timestamp = firstNonEmpty(
+                message.optString("createdAt", ""),
+                message.optString("updatedAt", ""),
+                detail.optString("createdAt", ""),
+                detail.optString("updatedAt", "")
+        );
+        return new InboxUpdate(messageId, subject, preview, sender, timestamp, code, link);
+    }
+
     private String extractVerificationCode(String rawContent) {
         if (rawContent == null || rawContent.trim().isEmpty()) {
             return null;
@@ -383,6 +415,46 @@ public class TempMailApi {
         return extractVerificationCode(content.toString());
     }
 
+    private String extractPrimaryLink(JSONObject detail) {
+        StringBuilder rawContent = new StringBuilder();
+        appendIfPresent(rawContent, detail.optString("subject", ""));
+        appendIfPresent(rawContent, detail.optString("intro", ""));
+        appendIfPresent(rawContent, detail.optString("text", ""));
+
+        JSONArray htmlBodies = detail.optJSONArray("html");
+        if (htmlBodies != null) {
+            for (int i = 0; i < htmlBodies.length(); i++) {
+                appendIfPresent(rawContent, htmlBodies.optString(i, ""));
+            }
+        }
+
+        appendIfPresent(rawContent, detail.optString("htmlAsText", ""));
+        return extractPrimaryLink(rawContent.toString());
+    }
+
+    private String extractPrimaryLink(String rawContent) {
+        if (rawContent == null || rawContent.trim().isEmpty()) {
+            return null;
+        }
+
+        List<String> linkCandidates = collectLinkCandidates(rawContent);
+        if (linkCandidates.isEmpty()) {
+            return null;
+        }
+
+        String normalized = normalizeContent(rawContent);
+        String bestLink = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (String candidate : linkCandidates) {
+            int score = scoreLinkCandidate(candidate, normalized);
+            if (score > bestScore) {
+                bestScore = score;
+                bestLink = candidate;
+            }
+        }
+        return bestScore > 0 ? bestLink : null;
+    }
+
     private String normalizeContent(String rawContent) {
         String text = rawContent
                 .replace("=\r\n", "")
@@ -390,6 +462,121 @@ public class TempMailApi {
                 .replace("&nbsp;", " ");
         text = Jsoup.parse(text).text();
         return text.replaceAll("\\s+", " ").trim();
+    }
+
+    private List<String> collectLinkCandidates(String rawContent) {
+        List<String> links = new ArrayList<>();
+        if (rawContent == null || rawContent.trim().isEmpty()) {
+            return links;
+        }
+
+        Matcher urlMatcher = URL_PATTERN.matcher(rawContent);
+        while (urlMatcher.find()) {
+            addUniqueLink(links, urlMatcher.group());
+        }
+
+        Document document = Jsoup.parse(rawContent);
+        Elements anchors = document.select("a[href]");
+        for (Element anchor : anchors) {
+            addUniqueLink(links, anchor.attr("href"));
+        }
+
+        String plainText = document.text();
+        Matcher plainUrlMatcher = URL_PATTERN.matcher(plainText);
+        while (plainUrlMatcher.find()) {
+            addUniqueLink(links, plainUrlMatcher.group());
+        }
+
+        return links;
+    }
+
+    private void addUniqueLink(List<String> links, String rawLink) {
+        String normalized = normalizeLink(rawLink);
+        if (normalized == null) {
+            return;
+        }
+        if (!links.contains(normalized)) {
+            links.add(normalized);
+        }
+    }
+
+    private String normalizeLink(String rawLink) {
+        if (rawLink == null) {
+            return null;
+        }
+        String normalized = rawLink.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        normalized = normalized
+                .replace("&amp;", "&")
+                .replace("&quot;", "")
+                .replace("&lt;", "")
+                .replace("&gt;", "");
+        while (normalized.endsWith(".")
+                || normalized.endsWith(",")
+                || normalized.endsWith(";")
+                || normalized.endsWith(")")
+                || normalized.endsWith("]")
+                || normalized.endsWith(">")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
+            return null;
+        }
+        String lower = normalized.toLowerCase();
+        if (lower.endsWith(".png")
+                || lower.endsWith(".jpg")
+                || lower.endsWith(".jpeg")
+                || lower.endsWith(".gif")
+                || lower.endsWith(".svg")
+                || lower.endsWith(".css")
+                || lower.endsWith(".js")) {
+            return null;
+        }
+        return normalized;
+    }
+
+    private int scoreLinkCandidate(String candidate, String normalizedContent) {
+        if (candidate == null || candidate.isEmpty()) {
+            return Integer.MIN_VALUE;
+        }
+
+        String lowerCandidate = candidate.toLowerCase();
+        int score = 20;
+        if (lowerCandidate.startsWith("https://")) {
+            score += 10;
+        }
+        if (containsAny(lowerCandidate, "verify", "verification", "confirm", "activate", "magic", "login")) {
+            score += 160;
+        }
+        if (containsAny(lowerCandidate, "reset", "password", "set-password", "set_password", "new-password")) {
+            score += 180;
+        }
+        if (containsAny(lowerCandidate, "auth", "token", "continue", "signin", "signup")) {
+            score += 60;
+        }
+        if (containsAny(lowerCandidate, "unsubscribe", "preferences", "support", "help", "privacy", "terms")) {
+            score -= 220;
+        }
+        if (lowerCandidate.contains("#")) {
+            score -= 20;
+        }
+        if (normalizedContent != null && !normalizedContent.isEmpty()) {
+            String loweredContent = normalizedContent.toLowerCase();
+            if (containsAny(
+                    loweredContent,
+                    "verification link",
+                    "verify email",
+                    "confirm email",
+                    "set password",
+                    "reset password",
+                    "magic link"
+            )) {
+                score += 50;
+            }
+        }
+        return score;
     }
 
     private String sanitizeCandidate(String candidate) {
@@ -448,6 +635,57 @@ public class TempMailApi {
         return true;
     }
 
+    private boolean containsAny(String haystack, String... needles) {
+        if (haystack == null || haystack.isEmpty()) {
+            return false;
+        }
+        for (String needle : needles) {
+            if (haystack.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String firstNonEmpty(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private String trimPreview(String value) {
+        String normalized = normalizeContent(value);
+        if (normalized.length() <= 180) {
+            return normalized;
+        }
+        return normalized.substring(0, 177).trim() + "...";
+    }
+
+    private String extractSender(JSONObject detail, JSONObject message) {
+        JSONObject from = detail.optJSONObject("from");
+        if (from == null) {
+            from = message.optJSONObject("from");
+        }
+        if (from == null) {
+            return "";
+        }
+        String name = from.optString("name", "").trim();
+        String address = from.optString("address", "").trim();
+        if (!name.isEmpty() && !address.isEmpty()) {
+            return name + " <" + address + ">";
+        }
+        if (!address.isEmpty()) {
+            return address;
+        }
+        return name;
+    }
+
     private static final class VerificationCodeCandidate {
         private final String value;
         private final int score;
@@ -457,6 +695,39 @@ public class TempMailApi {
             this.value = value;
             this.score = score;
             this.position = position;
+        }
+    }
+
+    public static final class InboxUpdate {
+        public final String messageId;
+        public final String subject;
+        public final String preview;
+        public final String sender;
+        public final String timestamp;
+        public final String verificationCode;
+        public final String primaryLink;
+
+        private InboxUpdate(
+                String messageId,
+                String subject,
+                String preview,
+                String sender,
+                String timestamp,
+                String verificationCode,
+                String primaryLink
+        ) {
+            this.messageId = messageId;
+            this.subject = subject;
+            this.preview = preview;
+            this.sender = sender;
+            this.timestamp = timestamp;
+            this.verificationCode = verificationCode;
+            this.primaryLink = primaryLink;
+        }
+
+        public boolean hasAutofillTarget() {
+            return (verificationCode != null && !verificationCode.trim().isEmpty())
+                    || (primaryLink != null && !primaryLink.trim().isEmpty());
         }
     }
 
