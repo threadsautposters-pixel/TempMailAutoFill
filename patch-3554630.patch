@@ -1,0 +1,695 @@
+From 355463080c0d00f46ae10fa573837306c1e027bd Mon Sep 17 00:00:00 2001
+From: threadsautposters-pixel
+ <threadsautposters-pixel@users.noreply.github.com>
+Date: Wed, 17 Jun 2026 03:49:34 +0000
+Subject: [PATCH] feat: Enhance App Features and UI
+
+Co-authored-by: traeagent <traeagent@users.noreply.github.com>
+---
+ .gitignore                                    |  9 +++
+ app/build.gradle                              |  4 +-
+ app/src/main/AndroidManifest.xml              |  6 +-
+ .../tempmail/autofill/AutoFillService.java    | 72 ++++++++++++++++---
+ .../com/tempmail/autofill/MainActivity.java   | 60 ++++++++++++++++
+ .../tempmail/autofill/WebViewActivity.java    | 36 ++++++----
+ .../main/res/color/bottom_nav_item_colors.xml |  5 ++
+ .../main/res/drawable/ic_nav_automation.xml   | 10 +++
+ app/src/main/res/drawable/ic_nav_history.xml  | 10 +++
+ app/src/main/res/drawable/ic_nav_home.xml     | 10 +++
+ app/src/main/res/drawable/ic_nav_mailbox.xml  | 10 +++
+ app/src/main/res/drawable/ic_nav_test.xml     | 10 +++
+ app/src/main/res/layout/activity_main.xml     | 45 +++++++++++-
+ app/src/main/res/menu/bottom_nav.xml          | 23 ++++++
+ app/src/main/res/values/strings.xml           | 10 +++
+ 15 files changed, 293 insertions(+), 27 deletions(-)
+ create mode 100644 .gitignore
+ create mode 100644 app/src/main/res/color/bottom_nav_item_colors.xml
+ create mode 100644 app/src/main/res/drawable/ic_nav_automation.xml
+ create mode 100644 app/src/main/res/drawable/ic_nav_history.xml
+ create mode 100644 app/src/main/res/drawable/ic_nav_home.xml
+ create mode 100644 app/src/main/res/drawable/ic_nav_mailbox.xml
+ create mode 100644 app/src/main/res/drawable/ic_nav_test.xml
+ create mode 100644 app/src/main/res/menu/bottom_nav.xml
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..1ce467b
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,9 @@
++.gradle/
++.idea/
++*.iml
++local.properties
++**/build/
++captures/
++*.jks
++*.keystore
++*.hprof
+diff --git a/app/build.gradle b/app/build.gradle
+index ea3e551..bfe188a 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -8,8 +8,8 @@ android {
+         applicationId "com.tempmail.autofill"
+         minSdk 24
+         targetSdk 34
+-        versionCode 8
+-        versionName "1.7"
++        versionCode 9
++        versionName "1.8"
+         vectorDrawables.useSupportLibrary = true
+     }
+     buildTypes {
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index e93a3ed..006ee15 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -3,6 +3,7 @@
+     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
++    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+     <application
+         android:allowBackup="true"
+@@ -38,6 +39,9 @@
+             <meta-data android:name="android.accessibilityservice"
+                 android:resource="@xml/accessibility_service_config" />
+         </service>
+-        <service android:name=".EmailFetcherService" />
++        <service
++            android:name=".EmailFetcherService"
++            android:exported="false"
++            android:foregroundServiceType="dataSync" />
+     </application>
+ </manifest>
+diff --git a/app/src/main/java/com/tempmail/autofill/AutoFillService.java b/app/src/main/java/com/tempmail/autofill/AutoFillService.java
+index 224d394..26ef17b 100644
+--- a/app/src/main/java/com/tempmail/autofill/AutoFillService.java
++++ b/app/src/main/java/com/tempmail/autofill/AutoFillService.java
+@@ -4,13 +4,20 @@ import android.accessibilityservice.AccessibilityService;
+ import android.os.Build;
+ import android.content.SharedPreferences;
+ import android.os.Bundle;
++import android.graphics.Rect;
+ import android.view.accessibility.AccessibilityEvent;
+ import android.view.accessibility.AccessibilityNodeInfo;
++import java.util.Collections;
++import java.util.Comparator;
+ import java.util.ArrayList;
+ import java.util.List;
+ import java.util.Locale;
++import java.util.regex.Pattern;
+ 
+ public class AutoFillService extends AccessibilityService {
++    private static final int MAX_EDITABLE_NODES = 80;
++    private static final Pattern OTP_INDEX_PATTERN = Pattern.compile(".*(otp|code|pin|digit)[^0-9]*[0-9].*", Pattern.CASE_INSENSITIVE);
++
+     @Override
+     public void onAccessibilityEvent(AccessibilityEvent event) {
+         int eventType = event.getEventType();
+@@ -35,7 +42,7 @@ public class AutoFillService extends AccessibilityService {
+         String code = prefs.getString("latest_code", null);
+ 
+         List<AccessibilityNodeInfo> fields = new ArrayList<>();
+-        collectEditableNodes(root, fields);
++        collectEditableNodes(root, fields, 0);
+ 
+         AccessibilityNodeInfo focusedNode = findBestTargetNode(root, event.getSource());
+         if (tryFillSegmentedCodeFields(fields, focusedNode, code)) {
+@@ -56,18 +63,30 @@ public class AutoFillService extends AccessibilityService {
+     @Override
+     public void onInterrupt() {}
+ 
+-    private void collectEditableNodes(AccessibilityNodeInfo node, List<AccessibilityNodeInfo> fields) {
++    private int collectEditableNodes(AccessibilityNodeInfo node, List<AccessibilityNodeInfo> fields, int collected) {
+         if (node == null) {
+-            return;
++            return collected;
++        }
++
++        if (collected >= MAX_EDITABLE_NODES) {
++            return collected;
+         }
+ 
+         if (isEditableField(node)) {
+             fields.add(node);
++            collected++;
++            if (collected >= MAX_EDITABLE_NODES) {
++                return collected;
++            }
+         }
+ 
+         for (int i = 0; i < node.getChildCount(); i++) {
+-            collectEditableNodes(node.getChild(i), fields);
++            collected = collectEditableNodes(node.getChild(i), fields, collected);
++            if (collected >= MAX_EDITABLE_NODES) {
++                return collected;
++            }
+         }
++        return collected;
+     }
+ 
+     private AccessibilityNodeInfo findBestTargetNode(AccessibilityNodeInfo root, AccessibilityNodeInfo source) {
+@@ -94,6 +113,7 @@ public class AutoFillService extends AccessibilityService {
+ 
+     private String buildFieldSignature(AccessibilityNodeInfo node) {
+         StringBuilder builder = new StringBuilder();
++        appendIfPresent(builder, node.getClassName());
+         appendIfPresent(builder, node.getViewIdResourceName());
+         appendIfPresent(builder, node.getText());
+         appendIfPresent(builder, node.getContentDescription());
+@@ -119,7 +139,10 @@ public class AutoFillService extends AccessibilityService {
+     private boolean shouldFillEmail(String signature) {
+         return signature.contains("email")
+                 || signature.contains("e-mail")
+-                || signature.contains("mail");
++                || signature.contains("mail")
++                || signature.contains("username")
++                || signature.contains("user name")
++                || signature.contains("login");
+     }
+ 
+     private boolean shouldFillCode(String signature) {
+@@ -164,6 +187,9 @@ public class AutoFillService extends AccessibilityService {
+             }
+         }
+ 
++        sortNodesByScreenPosition(labeledCodeFields);
++        sortNodesByScreenPosition(compactEditableFields);
++
+         if (normalizedCode.length() == labeledCodeFields.size()) {
+             return fillSegmentedFields(labeledCodeFields, normalizedCode);
+         }
+@@ -177,6 +203,25 @@ public class AutoFillService extends AccessibilityService {
+         return false;
+     }
+ 
++    private void sortNodesByScreenPosition(List<AccessibilityNodeInfo> nodes) {
++        if (nodes == null || nodes.size() < 2) {
++            return;
++        }
++        Collections.sort(nodes, new Comparator<AccessibilityNodeInfo>() {
++            @Override
++            public int compare(AccessibilityNodeInfo left, AccessibilityNodeInfo right) {
++                Rect leftRect = new Rect();
++                Rect rightRect = new Rect();
++                left.getBoundsInScreen(leftRect);
++                right.getBoundsInScreen(rightRect);
++                if (leftRect.top != rightRect.top) {
++                    return Integer.compare(leftRect.top, rightRect.top);
++                }
++                return Integer.compare(leftRect.left, rightRect.left);
++            }
++        });
++    }
++
+     private boolean fillSegmentedFields(List<AccessibilityNodeInfo> fields, String code) {
+         boolean filledAny = false;
+         for (int i = 0; i < fields.size(); i++) {
+@@ -205,17 +250,21 @@ public class AutoFillService extends AccessibilityService {
+         String currentValue = existingText == null ? "" : existingText.toString().trim();
+ 
+         if (shouldFillEmail(signature) && email != null && !email.isEmpty()) {
+-            if (!currentValue.isEmpty()) {
++            boolean focused = node.isFocused();
++            if (!focused && !currentValue.isEmpty()) {
++                return false;
++            }
++            if (focused && !currentValue.isEmpty() && currentValue.contains("@")) {
+                 return false;
+             }
+             return fillNode(node, email);
+         }
+ 
+         if (shouldFillCode(signature) && code != null && !code.isEmpty()) {
+-            if (currentValue.length() <= 1 && code.length() > 1) {
++            if (code.equals(currentValue)) {
+                 return false;
+             }
+-            if (code.equals(currentValue)) {
++            if (code.length() > 1 && currentValue.length() <= 1 && looksLikeSingleCharOtpField(signature)) {
+                 return false;
+             }
+             return fillNode(node, code);
+@@ -224,6 +273,13 @@ public class AutoFillService extends AccessibilityService {
+         return false;
+     }
+ 
++    private boolean looksLikeSingleCharOtpField(String signature) {
++        if (signature == null || signature.isEmpty()) {
++            return false;
++        }
++        return OTP_INDEX_PATTERN.matcher(signature).matches();
++    }
++
+     private boolean fillNode(AccessibilityNodeInfo node, String value) {
+         Bundle args = new Bundle();
+         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value);
+diff --git a/app/src/main/java/com/tempmail/autofill/MainActivity.java b/app/src/main/java/com/tempmail/autofill/MainActivity.java
+index fcdcc07..9d17fdf 100644
+--- a/app/src/main/java/com/tempmail/autofill/MainActivity.java
++++ b/app/src/main/java/com/tempmail/autofill/MainActivity.java
+@@ -19,12 +19,14 @@ import android.text.format.DateFormat;
+ import android.view.View;
+ import android.view.ViewGroup;
+ import android.widget.LinearLayout;
++import android.widget.ScrollView;
+ import android.widget.TextView;
+ import android.widget.Toast;
+ 
+ import androidx.appcompat.app.AppCompatActivity;
+ import androidx.core.content.ContextCompat;
+ 
++import com.google.android.material.bottomnavigation.BottomNavigationView;
+ import com.google.android.material.button.MaterialButton;
+ import com.google.android.material.switchmaterial.SwitchMaterial;
+ 
+@@ -47,6 +49,8 @@ public class MainActivity extends AppCompatActivity {
+     private LinearLayout historyContainer;
+     private SharedPreferences prefs;
+     private SwitchMaterial switchAutoCopy;
++    private ScrollView mainScroll;
++    private BottomNavigationView bottomNav;
+     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
+     private final Runnable dashboardTicker = new Runnable() {
+         @Override
+@@ -82,11 +86,14 @@ public class MainActivity extends AppCompatActivity {
+         MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
+         MaterialButton btnTest = findViewById(R.id.btn_test_webview);
+         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
++        MaterialButton btnNewEmail = findViewById(R.id.btn_new_email);
+         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
+         MaterialButton btnClearCode = findViewById(R.id.btn_clear_code);
+         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
+         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
+         switchAutoCopy = findViewById(R.id.switch_auto_copy);
++        mainScroll = findViewById(R.id.main_scroll);
++        bottomNav = findViewById(R.id.bottom_nav);
+ 
+         prefs = getSharedPreferences("auto", MODE_PRIVATE);
+         switchAutoFill.setChecked(prefs.getBoolean("enabled", false));
+@@ -135,6 +142,20 @@ public class MainActivity extends AppCompatActivity {
+         btnTest.setOnClickListener(v -> {
+             startActivity(new Intent(this, WebViewActivity.class));
+         });
++
++        btnNewEmail.setOnClickListener(v -> {
++            prefs.edit()
++                    .putBoolean("pending_force_refresh", true)
++                    .remove("latest_code")
++                    .remove("last_auto_copied_code")
++                    .apply();
++            if (!switchAutoFill.isChecked()) {
++                switchAutoFill.setChecked(true);
++            }
++            startEmailFetcher(true);
++            updateDashboard();
++            Toast.makeText(this, R.string.toast_new_email_started, Toast.LENGTH_SHORT).show();
++        });
+         btnLifetimePreset.setOnClickListener(v -> {
+             int nextLifetime = getNextLifetimeMinutes();
+             prefs.edit().putInt("mailbox_lifetime_minutes", nextLifetime).apply();
+@@ -169,6 +190,7 @@ public class MainActivity extends AppCompatActivity {
+         });
+ 
+         requestNotificationPermissionIfNeeded();
++        setupBottomNavigation();
+         updateDashboard();
+     }
+ 
+@@ -193,6 +215,44 @@ public class MainActivity extends AppCompatActivity {
+         updateDashboard();
+     }
+ 
++    private void setupBottomNavigation() {
++        if (bottomNav == null || mainScroll == null) {
++            return;
++        }
++        bottomNav.setSelectedItemId(R.id.nav_home);
++        bottomNav.setOnItemSelectedListener(item -> {
++            int itemId = item.getItemId();
++            if (itemId == R.id.nav_test) {
++                startActivity(new Intent(this, WebViewActivity.class));
++                return false;
++            }
++
++            int targetId;
++            if (itemId == R.id.nav_mailbox) {
++                targetId = R.id.card_mailbox;
++            } else if (itemId == R.id.nav_automation) {
++                targetId = R.id.card_automation;
++            } else if (itemId == R.id.nav_history) {
++                targetId = R.id.card_history;
++            } else {
++                targetId = R.id.card_overview;
++            }
++            scrollToView(targetId);
++            return true;
++        });
++    }
++
++    private void scrollToView(int viewId) {
++        if (mainScroll == null) {
++            return;
++        }
++        View target = findViewById(viewId);
++        if (target == null) {
++            return;
++        }
++        mainScroll.post(() -> mainScroll.smoothScrollTo(0, target.getTop()));
++    }
++
+     private void startEmailFetcher(boolean forceRefresh) {
+         Intent serviceIntent = new Intent(this, EmailFetcherService.class);
+         serviceIntent.putExtra("force_refresh", forceRefresh);
+diff --git a/app/src/main/java/com/tempmail/autofill/WebViewActivity.java b/app/src/main/java/com/tempmail/autofill/WebViewActivity.java
+index cabbcb8..b4b8a96 100644
+--- a/app/src/main/java/com/tempmail/autofill/WebViewActivity.java
++++ b/app/src/main/java/com/tempmail/autofill/WebViewActivity.java
+@@ -4,6 +4,7 @@ import android.os.Bundle;
+ import android.webkit.WebView;
+ import android.webkit.WebViewClient;
+ 
++import androidx.appcompat.app.AlertDialog;
+ import androidx.appcompat.app.AppCompatActivity;
+ 
+ public class WebViewActivity extends AppCompatActivity {
+@@ -11,20 +12,29 @@ public class WebViewActivity extends AppCompatActivity {
+     protected void onCreate(Bundle savedInstanceState) {
+         super.onCreate(savedInstanceState);
+ 
+-        WebView webView = new WebView(this);
+-        webView.setWebViewClient(new WebViewClient());
+-        webView.getSettings().setJavaScriptEnabled(true);
+-        webView.getSettings().setDomStorageEnabled(true);
+-        setTitle(R.string.webview_title);
++        try {
++            WebView webView = new WebView(this);
++            webView.setWebViewClient(new WebViewClient());
++            webView.getSettings().setJavaScriptEnabled(true);
++            webView.getSettings().setDomStorageEnabled(true);
++            setTitle(R.string.webview_title);
+ 
+-        webView.loadDataWithBaseURL(
+-                "https://local.tempmail.autofill/",
+-                buildDemoPage(),
+-                "text/html",
+-                "UTF-8",
+-                null
+-        );
+-        setContentView(webView);
++            webView.loadDataWithBaseURL(
++                    "https://local.tempmail.autofill/",
++                    buildDemoPage(),
++                    "text/html",
++                    "UTF-8",
++                    null
++            );
++            setContentView(webView);
++        } catch (Throwable error) {
++            new AlertDialog.Builder(this)
++                    .setTitle(R.string.webview_unavailable_title)
++                    .setMessage(R.string.webview_unavailable_message)
++                    .setPositiveButton(android.R.string.ok, (dialog, which) -> finish())
++                    .setOnCancelListener(dialog -> finish())
++                    .show();
++        }
+     }
+ 
+     private String buildDemoPage() {
+diff --git a/app/src/main/res/color/bottom_nav_item_colors.xml b/app/src/main/res/color/bottom_nav_item_colors.xml
+new file mode 100644
+index 0000000..e92b650
+--- /dev/null
++++ b/app/src/main/res/color/bottom_nav_item_colors.xml
+@@ -0,0 +1,5 @@
++<?xml version="1.0" encoding="utf-8"?>
++<selector xmlns:android="http://schemas.android.com/apk/res/android">
++    <item android:color="@color/color_primary" android:state_checked="true" />
++    <item android:color="@color/color_text_secondary" />
++</selector>
+diff --git a/app/src/main/res/drawable/ic_nav_automation.xml b/app/src/main/res/drawable/ic_nav_automation.xml
+new file mode 100644
+index 0000000..f069012
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_nav_automation.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF000000"
++        android:pathData="M13,2 3,14h7l-1,8 12,-14h-7z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_nav_history.xml b/app/src/main/res/drawable/ic_nav_history.xml
+new file mode 100644
+index 0000000..3c992cc
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_nav_history.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF000000"
++        android:pathData="M13,3a9,9 0,0 0,-9 9H2l3.5,3.5L9,12H6a7,7 0,1 1,7 7 7,7 0,0 1,-6.2 -3.8l-1.7,1A9,9 0,1 0,13 3zm-1,5v6l5,3 1,-1.7 -4,-2.3V8z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_nav_home.xml b/app/src/main/res/drawable/ic_nav_home.xml
+new file mode 100644
+index 0000000..054ce76
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_nav_home.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF000000"
++        android:pathData="M12,3l9,8h-3v10h-5v-6H11v6H6V11H3z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_nav_mailbox.xml b/app/src/main/res/drawable/ic_nav_mailbox.xml
+new file mode 100644
+index 0000000..43376f9
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_nav_mailbox.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF000000"
++        android:pathData="M20,6H4c-1.1,0-2,0.9-2,2v10c0,1.1 0.9,2 2,2h16c1.1,0 2-0.9 2-2V8c0-1.1-0.9-2-2-2zm0,4-8,5L4,10V8l8,5 8-5v2z" />
++</vector>
+diff --git a/app/src/main/res/drawable/ic_nav_test.xml b/app/src/main/res/drawable/ic_nav_test.xml
+new file mode 100644
+index 0000000..4072159
+--- /dev/null
++++ b/app/src/main/res/drawable/ic_nav_test.xml
+@@ -0,0 +1,10 @@
++<?xml version="1.0" encoding="utf-8"?>
++<vector xmlns:android="http://schemas.android.com/apk/res/android"
++    android:width="24dp"
++    android:height="24dp"
++    android:viewportWidth="24"
++    android:viewportHeight="24">
++    <path
++        android:fillColor="#FF000000"
++        android:pathData="M5,3h14a2,2 0,0 1,2 2v12a2,2 0,0 1,-2 2H9l-4,3v-3H5a2,2 0,0 1,-2 -2V5a2,2 0,0 1,2 -2zm2,6h10v2H7zm0,4h7v2H7z" />
++</vector>
+diff --git a/app/src/main/res/layout/activity_main.xml b/app/src/main/res/layout/activity_main.xml
+index 5660076..f256059 100644
+--- a/app/src/main/res/layout/activity_main.xml
++++ b/app/src/main/res/layout/activity_main.xml
+@@ -1,10 +1,17 @@
+ <?xml version="1.0" encoding="utf-8"?>
+-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+     xmlns:app="http://schemas.android.com/apk/res-auto"
+     android:layout_width="match_parent"
+     android:layout_height="match_parent"
+     android:background="@drawable/bg_main_gradient"
+-    android:fillViewport="true">
++    android:orientation="vertical">
++
++    <ScrollView
++        android:id="@+id/main_scroll"
++        android:layout_width="match_parent"
++        android:layout_height="0dp"
++        android:layout_weight="1"
++        android:fillViewport="true">
+ 
+     <LinearLayout
+         android:layout_width="match_parent"
+@@ -68,6 +75,7 @@
+             android:textStyle="bold" />
+ 
+         <com.google.android.material.card.MaterialCardView
++            android:id="@+id/card_overview"
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+             android:layout_marginBottom="16dp"
+@@ -127,6 +135,7 @@
+         </com.google.android.material.card.MaterialCardView>
+ 
+         <com.google.android.material.card.MaterialCardView
++            android:id="@+id/card_status"
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+             android:layout_marginBottom="16dp"
+@@ -251,6 +260,7 @@
+             android:textStyle="bold" />
+ 
+         <com.google.android.material.card.MaterialCardView
++            android:id="@+id/card_mailbox"
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+             android:layout_marginBottom="16dp"
+@@ -310,6 +320,21 @@
+                         android:layout_width="12dp"
+                         android:layout_height="1dp" />
+ 
++                    <com.google.android.material.button.MaterialButton
++                        android:id="@+id/btn_new_email"
++                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
++                        android:layout_width="0dp"
++                        android:layout_height="wrap_content"
++                        android:layout_weight="1"
++                        android:text="@string/button_new_email" />
++                </LinearLayout>
++
++                <LinearLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="wrap_content"
++                    android:layout_marginTop="12dp"
++                    android:orientation="horizontal">
++
+                     <com.google.android.material.button.MaterialButton
+                         android:id="@+id/btn_copy_code"
+                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+@@ -406,6 +431,7 @@
+         </com.google.android.material.card.MaterialCardView>
+ 
+         <com.google.android.material.card.MaterialCardView
++            android:id="@+id/card_automation"
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+             android:layout_marginBottom="16dp"
+@@ -504,6 +530,7 @@
+         </com.google.android.material.card.MaterialCardView>
+ 
+         <com.google.android.material.card.MaterialCardView
++            android:id="@+id/card_history"
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+             android:layout_marginBottom="16dp"
+@@ -575,6 +602,7 @@
+         </com.google.android.material.card.MaterialCardView>
+ 
+         <com.google.android.material.card.MaterialCardView
++            android:id="@+id/card_steps"
+             android:layout_width="match_parent"
+             android:layout_height="wrap_content"
+             app:cardBackgroundColor="@color/color_surface_alt"
+@@ -623,4 +651,15 @@
+             </LinearLayout>
+         </com.google.android.material.card.MaterialCardView>
+     </LinearLayout>
+-</ScrollView>
++    </ScrollView>
++
++    <com.google.android.material.bottomnavigation.BottomNavigationView
++        android:id="@+id/bottom_nav"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:background="@color/color_surface"
++        app:itemIconTint="@color/bottom_nav_item_colors"
++        app:itemTextColor="@color/bottom_nav_item_colors"
++        app:labelVisibilityMode="labeled"
++        app:menu="@menu/bottom_nav" />
++</LinearLayout>
+diff --git a/app/src/main/res/menu/bottom_nav.xml b/app/src/main/res/menu/bottom_nav.xml
+new file mode 100644
+index 0000000..6a0741a
+--- /dev/null
++++ b/app/src/main/res/menu/bottom_nav.xml
+@@ -0,0 +1,23 @@
++<?xml version="1.0" encoding="utf-8"?>
++<menu xmlns:android="http://schemas.android.com/apk/res/android">
++    <item
++        android:id="@+id/nav_home"
++        android:icon="@drawable/ic_nav_home"
++        android:title="@string/nav_home" />
++    <item
++        android:id="@+id/nav_mailbox"
++        android:icon="@drawable/ic_nav_mailbox"
++        android:title="@string/nav_mailbox" />
++    <item
++        android:id="@+id/nav_automation"
++        android:icon="@drawable/ic_nav_automation"
++        android:title="@string/nav_automation" />
++    <item
++        android:id="@+id/nav_history"
++        android:icon="@drawable/ic_nav_history"
++        android:title="@string/nav_history" />
++    <item
++        android:id="@+id/nav_test"
++        android:icon="@drawable/ic_nav_test"
++        android:title="@string/nav_test" />
++</menu>
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 58d6b47..9062631 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -19,6 +19,7 @@
+     <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
+     <string name="button_accessibility">Open accessibility settings</string>
+     <string name="button_refresh">Refresh mailbox</string>
++    <string name="button_new_email">New email</string>
+     <string name="button_start_automation">Start automation</string>
+     <string name="button_stop_automation">Stop automation</string>
+     <string name="button_test">Open test sign-up page</string>
+@@ -60,6 +61,7 @@
+     <string name="step_three">3. Open the test page or your target sign-up flow and let the app assist.</string>
+     <string name="toast_accessibility_hint">Accessibility access is still required for autofill to work.</string>
+     <string name="toast_refresh_started">Mailbox refresh started.</string>
++    <string name="toast_new_email_started">Generating a new email…</string>
+     <string name="toast_history_cleared">Email history cleared.</string>
+     <string name="toast_copied_email">Email copied.</string>
+     <string name="toast_copied_code">Verification code copied.</string>
+@@ -68,6 +70,8 @@
+     <string name="toast_lifetime_updated">Mailbox lifetime updated and refresh started.</string>
+     <string name="status_error_prefix">Attention: </string>
+     <string name="webview_title">Test Sign-up</string>
++    <string name="webview_unavailable_title">WebView unavailable</string>
++    <string name="webview_unavailable_message">WebView is disabled or missing on this device. Enable Android System WebView (or Chrome) and try again.</string>
+     <string name="notification_channel_name">Mailbox monitoring</string>
+     <string name="notification_channel_description">Keeps temp email polling stable while monitoring for verification codes.</string>
+     <string name="notification_title">TempMail AutoFill is active</string>
+@@ -75,4 +79,10 @@
+     <string name="notification_text_email_ready">Current mailbox ready: %1$s</string>
+     <string name="notification_text_code_ready">Verification code ready: %1$s</string>
+     <string name="notification_action_refresh">Refresh</string>
++
++    <string name="nav_home">Home</string>
++    <string name="nav_mailbox">Mailbox</string>
++    <string name="nav_automation">Automation</string>
++    <string name="nav_history">History</string>
++    <string name="nav_test">Test</string>
+ </resources>
+-- 
+2.43.0
+
