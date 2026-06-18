@@ -88,6 +88,9 @@
                             android:minHeight="48dp"
                             android:text="@string/button_refresh"
                             android:textColor="@android:color/white"
+                            app:icon="@drawable/ic_bolt_24"
+                            app:iconGravity="textStart"
+                            app:iconPadding="8dp"
                             app:iconTint="@android:color/white"
                             app:strokeColor="@android:color/white" />
                     </LinearLayout>
@@ -315,7 +318,11 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
+                            android:ellipsize="end"
+                            android:fontFamily="sans-serif-medium"
+                            android:maxLines="2"
                             android:text="@string/placeholder_email"
+                            android:textIsSelectable="true"
                             android:textColor="@color/color_text_primary"
                             android:textSize="18sp"
                             android:textStyle="bold" />
@@ -357,7 +364,9 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="8dp"
+                                android:fontFamily="monospace"
                                 android:text="@string/placeholder_code"
+                                android:textIsSelectable="true"
                                 android:textColor="@color/color_text_primary"
                                 android:textSize="22sp"
                                 android:textStyle="bold" />
@@ -415,9 +424,12 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="8dp"
                                 android:autoLink="web"
+                                android:ellipsize="end"
+                                android:fontFamily="sans-serif-medium"
                                 android:linksClickable="true"
                                 android:maxLines="4"
                                 android:text="@string/placeholder_link"
+                                android:textIsSelectable="true"
                                 android:textColor="@color/color_text_primary"
                                 android:textSize="15sp" />
 
@@ -477,6 +489,8 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="8dp"
+                                android:ellipsize="end"
+                                android:maxLines="2"
                                 android:text="@string/placeholder_provider"
                                 android:textColor="@color/color_text_primary"
                                 android:textSize="16sp"
@@ -508,6 +522,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="8dp"
+                                android:maxLines="2"
                                 android:text="@string/placeholder_sync"
                                 android:textColor="@color/color_text_primary"
                                 android:textSize="16sp"
@@ -543,6 +558,7 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="8dp"
+                                android:fontFamily="monospace"
                                 android:text="@string/placeholder_countdown_waiting"
                                 android:textColor="@color/color_text_primary"
                                 android:textSize="20sp"
@@ -680,16 +696,43 @@
                         android:orientation="vertical"
                         android:padding="14dp">
 
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/switch_auto"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/switch_title"
-                            android:textColor="@color/color_text_primary"
-                            android:textSize="16sp"
-                            app:thumbTint="@color/color_surface"
-                            app:trackTint="@color/color_primary_light"
-                            app:useMaterialThemeColors="false" />
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/switch_title"
+                                    android:textColor="@color/color_text_primary"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.switchmaterial.SwitchMaterial
+                                    android:id="@+id/switch_auto"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    app:thumbTint="@color/color_surface"
+                                    app:trackTint="@color/color_primary_light"
+                                    app:useMaterialThemeColors="false" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="@string/switch_auto_summary"
+                                android:textColor="@color/color_text_secondary"
+                                android:textSize="13sp" />
+                        </LinearLayout>
 
                         <View
                             android:layout_width="match_parent"
@@ -698,16 +741,43 @@
                             android:layout_marginBottom="10dp"
                             android:background="@color/color_divider" />
 
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/switch_auto_copy"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/switch_auto_copy"
-                            android:textColor="@color/color_text_primary"
-                            android:textSize="16sp"
-                            app:thumbTint="@color/color_surface"
-                            app:trackTint="@color/color_primary_light"
-                            app:useMaterialThemeColors="false" />
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/switch_auto_copy"
+                                    android:textColor="@color/color_text_primary"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.switchmaterial.SwitchMaterial
+                                    android:id="@+id/switch_auto_copy"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    app:thumbTint="@color/color_surface"
+                                    app:trackTint="@color/color_primary_light"
+                                    app:useMaterialThemeColors="false" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="@string/switch_auto_copy_summary"
+                                android:textColor="@color/color_text_secondary"
+                                android:textSize="13sp" />
+                        </LinearLayout>
 
                         <View
                             android:layout_width="match_parent"
@@ -716,16 +786,43 @@
                             android:layout_marginBottom="10dp"
                             android:background="@color/color_divider" />
 
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/switch_otp_alerts"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/switch_otp_alerts"
-                            android:textColor="@color/color_text_primary"
-                            android:textSize="16sp"
-                            app:thumbTint="@color/color_surface"
-                            app:trackTint="@color/color_primary_light"
-                            app:useMaterialThemeColors="false" />
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/switch_otp_alerts"
+                                    android:textColor="@color/color_text_primary"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.switchmaterial.SwitchMaterial
+                                    android:id="@+id/switch_otp_alerts"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    app:thumbTint="@color/color_surface"
+                                    app:trackTint="@color/color_primary_light"
+                                    app:useMaterialThemeColors="false" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="@string/switch_otp_alerts_summary"
+                                android:textColor="@color/color_text_secondary"
+                                android:textSize="13sp" />
+                        </LinearLayout>
 
                         <View
                             android:layout_width="match_parent"
@@ -734,16 +831,43 @@
                             android:layout_marginBottom="10dp"
                             android:background="@color/color_divider" />
 
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/switch_aggressive_signup"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="@string/switch_aggressive_signup"
-                            android:textColor="@color/color_text_primary"
-                            android:textSize="16sp"
-                            app:thumbTint="@color/color_surface"
-                            app:trackTint="@color/color_primary_light"
-                            app:useMaterialThemeColors="false" />
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/switch_aggressive_signup"
+                                    android:textColor="@color/color_text_primary"
+                                    android:textSize="16sp"
+                                    android:textStyle="bold" />
+
+                                <com.google.android.material.switchmaterial.SwitchMaterial
+                                    android:id="@+id/switch_aggressive_signup"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    app:thumbTint="@color/color_surface"
+                                    app:trackTint="@color/color_primary_light"
+                                    app:useMaterialThemeColors="false" />
+                            </LinearLayout>
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:text="@string/switch_aggressive_signup_summary"
+                                android:textColor="@color/color_text_secondary"
+                                android:textSize="13sp" />
+                        </LinearLayout>
                     </LinearLayout>
 
                     <LinearLayout

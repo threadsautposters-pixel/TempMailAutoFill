@@ -2,25 +2,32 @@
 <resources>
     <string name="app_name">TempMail AutoFill</string>
     <string name="dashboard_eyebrow">Verification Workspace</string>
-    <string name="dashboard_title">A more powerful, professional temp mail dashboard</string>
-    <string name="dashboard_subtitle">Track live mailbox state, review recent email history, keep autofill stable, and move through verification flows with less friction.</string>
-    <string name="dashboard_hint">Refresh the mailbox, then jump into sign-up flows with the latest email, code, and verification link ready.</string>
+    <string name="dashboard_title">Temp mail, tuned for faster verification flows</string>
+    <string name="dashboard_subtitle">Keep one clean workspace for mailbox status, OTP capture, verification links, and autofill setup.</string>
+    <string name="dashboard_hint">Refresh once, then work from the latest email, code, and sign-up link.</string>
     <string name="section_home">Home</string>
     <string name="section_automation">Automation</string>
     <string name="section_history">History</string>
     <string name="card_overview_title">Control Center</string>
-    <string name="card_overview_subtitle">Track readiness, inbox health, compatibility, and the latest values before opening a sign-up flow.</string>
+    <string name="card_overview_subtitle">Check setup, sync state, and session readiness before you open a sign-up flow.</string>
     <string name="status_badge_off">Off</string>
     <string name="status_badge_ready">Ready</string>
     <string name="status_badge_setup">Needs Setup</string>
-    <string name="status_summary_off">Automation is off. Turn it on to create a temp inbox and start polling for codes.</string>
+    <string name="status_summary_off">Standby mode is active. Turn on automation to generate a mailbox and watch for new verification messages.</string>
     <string name="status_summary_ready">Automation is active and ready to fill supported email and verification fields.</string>
+    <string name="status_summary_ready_live">Mailbox sync is live. Fresh email, codes, and links stay ready for autofill.</string>
+    <string name="status_summary_ready_idle">Automation is armed. Refresh the mailbox to pull a fresh email and start watching for verification messages.</string>
     <string name="status_summary_setup">Automation is on, but accessibility access still needs to be enabled.</string>
+    <string name="status_summary_setup_action">Finish accessibility setup so the helper can reach email and OTP fields in sign-up screens.</string>
     <string name="switch_title">Enable automation</string>
     <string name="switch_subtitle">Start the temp inbox service and keep the latest email and code ready for autofill.</string>
     <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
     <string name="switch_aggressive_signup">Aggressive sign-up autofill for unlabeled email fields</string>
     <string name="switch_otp_alerts">Show instant OTP notifications</string>
+    <string name="switch_auto_summary">Creates a mailbox, polls for new messages, and keeps the dashboard in sync.</string>
+    <string name="switch_auto_copy_summary">Copies new OTP codes to the clipboard the moment they arrive.</string>
+    <string name="switch_otp_alerts_summary">Shows high-priority alerts when a fresh code or verification link is detected.</string>
+    <string name="switch_aggressive_signup_summary">Targets harder sign-up forms that hide or mislabel email inputs.</string>
     <string name="button_accessibility">Open accessibility settings</string>
     <string name="button_refresh">Refresh mailbox</string>
     <string name="button_start_automation">Start automation</string>
@@ -51,10 +58,13 @@
     <string name="value_service_on">Running</string>
     <string name="value_service_off">Idle</string>
     <string name="value_stability">Foreground protected</string>
+    <string name="value_stability_live">Live sync</string>
+    <string name="value_stability_armed">Armed</string>
+    <string name="value_stability_standby">Standby</string>
     <string name="card_mailbox_title">Mailbox Snapshot</string>
-    <string name="card_mailbox_subtitle">Pin the latest email, OTP, provider, and verification link in one place so the active mailbox is always easy to review.</string>
+    <string name="card_mailbox_subtitle">Pin the active mailbox, OTP, provider, and verification link in one place for quick review.</string>
     <string name="card_automation_title">Automation Actions</string>
-    <string name="card_automation_subtitle">Launch the helper, test signup flows, tune alerts, and keep autofill behavior aligned with your current verification setup.</string>
+    <string name="card_automation_subtitle">Launch the helper, test flows, tune alerts, and keep autofill behavior aligned with your setup.</string>
     <string name="label_email">Current temp email</string>
     <string name="label_code">Latest verification code</string>
     <string name="label_link">Latest verification link</string>
@@ -72,7 +82,7 @@
     <string name="placeholder_countdown_waiting">Preparing mailbox</string>
     <string name="placeholder_countdown_refreshing">Refreshing now</string>
     <string name="card_inbox_title">Inbox</string>
-    <string name="card_inbox_subtitle">Review recent emails, copy OTPs, and open verification links without leaving the Android flow.</string>
+    <string name="card_inbox_subtitle">Review recent emails, pull OTPs, and open verification links without leaving the Android flow.</string>
     <string name="toolkit_title">Verification Toolkit</string>
     <string name="toolkit_subtitle">Analyze the current mailbox, jump to the best next action, and export a clean verification pack.</string>
     <string name="toolkit_status_empty">No current mailbox is ready yet. Refresh the mailbox to start building a verification pack.</string>
@@ -87,7 +97,7 @@
     <string name="toolkit_selected_message_fallback">Best message: Newest actionable inbox email</string>
     <string name="inbox_empty">No inbox messages yet. Keep automation running and refresh the mailbox to start receiving emails.</string>
     <string name="card_history_title">Recent mailbox history</string>
-    <string name="card_history_subtitle">Review the last temp emails generated by the app so you can reuse or audit them quickly.</string>
+    <string name="card_history_subtitle">Review the latest generated mailboxes so you can reuse or audit them quickly.</string>
     <string name="history_empty">No email history yet. Generate a mailbox to start building a recent history list.</string>
     <string name="history_provider_format">%1$s • %2$s</string>
     <string name="card_steps_title">Recommended flow</string>
@@ -115,7 +125,7 @@
     <string name="toast_inbox_cleared">Inbox cleared.</string>
     <string name="toast_share_unavailable">No app is available to share the verification pack.</string>
     <string name="toast_toolkit_no_action">No actionable inbox message is available yet.</string>
-    <string name="status_error_prefix">Attention: </string>
+    <string name="status_error_prefix">Attention • </string>
     <string name="error_notifications_required">Notification permission is required to keep polling stable. Please enable notifications for the app.</string>
     <string name="webview_title">Test Sign-up</string>
     <string name="notification_channel_name">Mailbox monitoring</string>
@@ -148,11 +158,13 @@
     <string name="accessibility_required_disable">Turn off automation</string>
 
     <string name="provider_dialog_title">Provider settings</string>
+    <string name="provider_dialog_subtitle">Set a provider label and API base URL for the current mailbox source.</string>
     <string name="provider_dialog_name_hint">Provider name (optional)</string>
     <string name="provider_dialog_url_hint">Provider API base URL</string>
     <string name="provider_dialog_save">Save</string>
     <string name="provider_dialog_cancel">Cancel</string>
     <string name="password_dialog_title">Saved password</string>
+    <string name="password_dialog_subtitle">Save one reusable password for password and confirm-password fields.</string>
     <string name="password_dialog_hint">Password to autofill in password and confirm-password fields</string>
     <string name="password_dialog_save">Save password</string>
     <string name="password_dialog_clear">Clear password</string>
@@ -163,5 +175,7 @@
     <string name="inbox_action_hint_link_code">Tap this email to make its code and sign-up link the active dashboard values.</string>
     <string name="inbox_action_hint_link">Tap this email to make its sign-up link the active dashboard value.</string>
     <string name="inbox_action_hint_code">Tap this email to make its code the active dashboard value.</string>
+    <string name="inbox_passive_hint">Monitoring message only</string>
+    <string name="history_tap_hint">Tap to copy this email</string>
     <string name="inbox_timestamp_unknown">Unknown time</string>
 </resources>

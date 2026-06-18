@@ -65,6 +65,8 @@ public class MainActivity extends AppCompatActivity {
     private NestedScrollView mainScroll;
     private View historyAnchor;
     private View automationAnchor;
+    private MaterialButton btnToggleAutomation;
+    private MaterialButton btnLifetimePreset;
     private FloatingActionButton fabStartAutomation;
     private AlertDialog accessibilityDialog;
     private final Runnable dashboardTicker = new Runnable() {
@@ -108,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
         inboxContainer = findViewById(R.id.inbox_container);
         MaterialButton btnService = findViewById(R.id.btn_start_service);
         MaterialButton btnRefresh = findViewById(R.id.btn_refresh);
-        MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
+        btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
         MaterialButton btnTest = findViewById(R.id.btn_test_webview);
         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
@@ -116,7 +118,7 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnOpenLink = findViewById(R.id.btn_open_link);
         MaterialButton btnClearCode = findViewById(R.id.btn_clear_code);
         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
-        MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
+        btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         MaterialButton btnSetPassword = findViewById(R.id.btn_set_password);
         MaterialButton btnVerificationToolkit = findViewById(R.id.btn_verification_toolkit);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
@@ -304,7 +306,7 @@ public class MainActivity extends AppCompatActivity {
         String email = prefs.getString("latest_email", "");
         String code = prefs.getString("latest_code", "");
         String link = prefs.getString("latest_link", "");
-        String provider = prefs.getString("latest_provider", "");
+        String provider = resolveProviderDisplay();
         String savedPassword = prefs.getString("saved_password", "");
         String lastError = prefs.getString("last_error", "");
         long lastSync = prefs.getLong("last_sync", 0L);
@@ -344,12 +346,8 @@ public class MainActivity extends AppCompatActivity {
                     R.color.color_warning_bg,
                     R.color.color_warning
             );
-            statusText.setText(R.string.status_summary_setup);
         }
-
-        if (!TextUtils.isEmpty(lastError)) {
-            statusText.setText(getString(R.string.status_error_prefix) + lastError);
-        }
+        updateStatusSummary(enabled, accessibilityEnabled, serviceActive, lastError);
 
         accessibilityStatus.setText(
                 accessibilityEnabled
@@ -367,30 +365,117 @@ public class MainActivity extends AppCompatActivity {
                 serviceActive ? R.color.color_success : R.color.color_text_primary
         ));
 
-        stabilityStatus.setText(R.string.value_stability);
-        emailValue.setText(TextUtils.isEmpty(email) ? getString(R.string.placeholder_email) : email);
-        codeValue.setText(TextUtils.isEmpty(code) ? getString(R.string.placeholder_code) : formatCodeForDisplay(code));
-        linkValue.setText(TextUtils.isEmpty(link) ? getString(R.string.placeholder_link) : link);
-        passwordValue.setText(formatSavedPasswordSummary(savedPassword));
-        providerValue.setText(TextUtils.isEmpty(provider) ? getString(R.string.placeholder_provider) : provider);
-        mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
-        MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
-        btnToggleAutomation.setText(enabled ? R.string.button_stop_automation : R.string.button_start_automation);
+        updateStabilityStatus(enabled, accessibilityEnabled, serviceActive);
+        setDashboardValue(emailValue, email, R.string.placeholder_email);
+        setDashboardValue(codeValue,
+                TextUtils.isEmpty(code) ? "" : formatCodeForDisplay(code),
+                R.string.placeholder_code);
+        setDashboardValue(linkValue, link, R.string.placeholder_link);
+        setDashboardValue(passwordValue,
+                TextUtils.isEmpty(savedPassword) ? "" : formatSavedPasswordSummary(savedPassword),
+                R.string.placeholder_password);
+        setDashboardValue(providerValue, provider, R.string.placeholder_provider);
+        updateMailboxCountdownState(enabled, serviceActive, mailboxExpiresAt);
+        if (btnToggleAutomation != null) {
+            btnToggleAutomation.setText(enabled ? R.string.button_stop_automation : R.string.button_start_automation);
+            btnToggleAutomation.setIconResource(enabled ? R.drawable.ic_stop_24 : R.drawable.ic_play_24);
+        }
         if (fabStartAutomation != null) {
             fabStartAutomation.setImageResource(enabled ? R.drawable.ic_stop_24 : R.drawable.ic_play_24);
             fabStartAutomation.setContentDescription(getString(
                     enabled ? R.string.button_stop_automation : R.string.nav_start_automation
             ));
         }
-        MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
-        btnLifetimePreset.setText(getLifetimeButtonText(mailboxLifetimeMinutes));
-        lastSyncValue.setText(lastSync <= 0
-                ? getString(R.string.placeholder_sync)
-                : DateFormat.getMediumDateFormat(this).format(new Date(lastSync))
-                + " "
-                + DateFormat.getTimeFormat(this).format(new Date(lastSync)));
+        if (btnLifetimePreset != null) {
+            btnLifetimePreset.setText(getLifetimeButtonText(mailboxLifetimeMinutes));
+        }
+        setDashboardValue(lastSyncValue, formatLastSync(lastSync), R.string.placeholder_sync);
         renderInbox();
         renderHistory();
+    }
+
+    private void updateStatusSummary(
+            boolean enabled,
+            boolean accessibilityEnabled,
+            boolean serviceActive,
+            String lastError
+    ) {
+        if (!TextUtils.isEmpty(lastError)) {
+            statusText.setText(getString(R.string.status_error_prefix) + lastError);
+            return;
+        }
+        if (!enabled) {
+            statusText.setText(R.string.status_summary_off);
+            return;
+        }
+        if (!accessibilityEnabled) {
+            statusText.setText(serviceActive
+                    ? R.string.status_summary_setup
+                    : R.string.status_summary_setup_action);
+            return;
+        }
+        statusText.setText(serviceActive
+                ? R.string.status_summary_ready_live
+                : R.string.status_summary_ready_idle);
+    }
+
+    private void updateStabilityStatus(boolean enabled, boolean accessibilityEnabled, boolean serviceActive) {
+        int textRes;
+        int colorRes;
+        if (enabled && accessibilityEnabled && serviceActive) {
+            textRes = R.string.value_stability_live;
+            colorRes = R.color.color_success;
+        } else if (enabled) {
+            textRes = R.string.value_stability_armed;
+            colorRes = R.color.color_primary;
+        } else {
+            textRes = R.string.value_stability_standby;
+            colorRes = R.color.color_text_secondary;
+        }
+        stabilityStatus.setText(textRes);
+        stabilityStatus.setTextColor(ContextCompat.getColor(this, colorRes));
+    }
+
+    private void setDashboardValue(TextView textView, String value, int placeholderRes) {
+        boolean hasValue = !TextUtils.isEmpty(value);
+        textView.setText(hasValue ? value : getString(placeholderRes));
+        textView.setTextColor(ContextCompat.getColor(
+                this,
+                hasValue ? R.color.color_text_primary : R.color.color_text_secondary
+        ));
+        textView.setAlpha(hasValue ? 1f : 0.88f);
+    }
+
+    private void updateMailboxCountdownState(boolean enabled, boolean serviceActive, long mailboxExpiresAt) {
+        mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
+        int colorRes;
+        if (!enabled) {
+            colorRes = R.color.color_text_secondary;
+        } else if (mailboxExpiresAt <= 0L) {
+            colorRes = R.color.color_text_secondary;
+        } else {
+            long remainingMs = mailboxExpiresAt - System.currentTimeMillis();
+            colorRes = remainingMs <= 60_000L ? R.color.color_warning : R.color.color_primary;
+        }
+        mailboxCountdownValue.setTextColor(ContextCompat.getColor(this, colorRes));
+    }
+
+    private String formatLastSync(long lastSync) {
+        if (lastSync <= 0L) {
+            return "";
+        }
+        Date date = new Date(lastSync);
+        return DateFormat.getMediumDateFormat(this).format(date)
+                + " • "
+                + DateFormat.getTimeFormat(this).format(date);
+    }
+
+    private String resolveProviderDisplay() {
+        String latestProvider = prefs.getString("latest_provider", "");
+        if (!TextUtils.isEmpty(latestProvider)) {
+            return latestProvider;
+        }
+        return prefs.getString("provider_name", "");
     }
 
     private boolean handleBottomNav(int itemId) {
@@ -511,6 +596,8 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout item = new LinearLayout(this);
         item.setOrientation(LinearLayout.VERTICAL);
         item.setBackgroundResource(R.drawable.bg_history_item);
+        item.setClickable(true);
+        item.setFocusable(true);
         int padding = dpToPx(16);
         item.setPadding(padding, padding, padding, padding);
 
@@ -526,6 +613,8 @@ public class MainActivity extends AppCompatActivity {
         title.setTextColor(ContextCompat.getColor(this, R.color.color_text_primary));
         title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setMaxLines(1);
+        title.setEllipsize(TextUtils.TruncateAt.MIDDLE);
 
         TextView subtitle = new TextView(this);
         subtitle.setText(getString(
@@ -536,9 +625,17 @@ public class MainActivity extends AppCompatActivity {
         subtitle.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
         subtitle.setTextSize(13);
         subtitle.setPadding(0, dpToPx(6), 0, 0);
+        subtitle.setLineSpacing(0f, 1.1f);
+
+        TextView helper = new TextView(this);
+        helper.setText(R.string.history_tap_hint);
+        helper.setTextColor(ContextCompat.getColor(this, R.color.color_primary));
+        helper.setTextSize(12);
+        helper.setPadding(0, dpToPx(10), 0, 0);
 
         item.addView(title);
         item.addView(subtitle);
+        item.addView(helper);
         item.setOnClickListener(v -> copyValue(entry.email, R.string.toast_copied_email));
         return item;
     }
@@ -559,6 +656,8 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout item = new LinearLayout(this);
         item.setOrientation(LinearLayout.VERTICAL);
         item.setBackgroundResource(R.drawable.bg_history_item);
+        item.setClickable(entry.hasActionableValue());
+        item.setFocusable(entry.hasActionableValue());
         int padding = dpToPx(16);
         item.setPadding(padding, padding, padding, padding);
 
@@ -574,18 +673,25 @@ public class MainActivity extends AppCompatActivity {
         title.setTextColor(ContextCompat.getColor(this, R.color.color_text_primary));
         title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setMaxLines(2);
+        title.setEllipsize(TextUtils.TruncateAt.END);
 
         TextView subtitle = new TextView(this);
         subtitle.setText(buildInboxMetadata(entry));
         subtitle.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
         subtitle.setTextSize(13);
         subtitle.setPadding(0, dpToPx(6), 0, 0);
+        subtitle.setMaxLines(2);
+        subtitle.setEllipsize(TextUtils.TruncateAt.END);
 
         TextView preview = new TextView(this);
         preview.setText(buildInboxPreview(entry));
         preview.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
         preview.setTextSize(13);
         preview.setPadding(0, dpToPx(6), 0, 0);
+        preview.setLineSpacing(0f, 1.1f);
+        preview.setMaxLines(4);
+        preview.setEllipsize(TextUtils.TruncateAt.END);
 
         item.addView(title);
         item.addView(subtitle);
@@ -599,6 +705,13 @@ public class MainActivity extends AppCompatActivity {
             item.addView(helper);
             item.addView(createInboxActionRow(entry));
             item.setOnClickListener(v -> applyInboxEntry(entry, false));
+        } else {
+            TextView helper = new TextView(this);
+            helper.setText(R.string.inbox_passive_hint);
+            helper.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
+            helper.setTextSize(12);
+            helper.setPadding(0, dpToPx(10), 0, 0);
+            item.addView(helper);
         }
         return item;
     }
@@ -654,27 +767,33 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dpToPx(12), 0, 0);
+        boolean hasLink = entry.hasLink();
+        boolean hasCode = entry.hasCode();
 
-        row.addView(createInboxActionButton(
-                R.string.button_use_now,
-                v -> applyInboxEntry(entry, false)
-        ));
+        addInboxActionButton(row, R.string.button_use_now, v -> applyInboxEntry(entry, false), !hasLink && !hasCode);
 
-        if (entry.hasLink()) {
-            row.addView(createInboxActionButton(
-                    R.string.button_open_link,
-                    v -> openInboxLink(entry)
-            ));
+        if (hasLink) {
+            addInboxActionButton(row, R.string.button_open_link, v -> openInboxLink(entry), !hasCode);
         }
 
-        if (entry.hasCode()) {
-            row.addView(createInboxActionButton(
-                    R.string.button_copy_code,
-                    v -> copyValue(entry.code, R.string.toast_copied_code)
-            ));
+        if (hasCode) {
+            addInboxActionButton(row, R.string.button_copy_code, v -> copyValue(entry.code, R.string.toast_copied_code), true);
         }
 
         return row;
+    }
+
+    private void addInboxActionButton(
+            LinearLayout row,
+            int textRes,
+            View.OnClickListener onClickListener,
+            boolean isLast
+    ) {
+        MaterialButton button = createInboxActionButton(textRes, onClickListener);
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) button.getLayoutParams();
+        params.rightMargin = isLast ? 0 : dpToPx(8);
+        button.setLayoutParams(params);
+        row.addView(button);
     }
 
     private MaterialButton createInboxActionButton(int textRes, View.OnClickListener onClickListener) {
@@ -688,7 +807,6 @@ public class MainActivity extends AppCompatActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 1f
         );
-        params.rightMargin = dpToPx(8);
         button.setLayoutParams(params);
         button.setText(textRes);
         button.setOnClickListener(onClickListener);
@@ -1014,7 +1132,7 @@ public class MainActivity extends AppCompatActivity {
         String email = prefs.getString("latest_email", "");
         String code = prefs.getString("latest_code", "");
         String link = prefs.getString("latest_link", "");
-        String provider = prefs.getString("latest_provider", "");
+        String provider = resolveProviderDisplay();
         String password = prefs.getString("saved_password", "");
         long lastSync = prefs.getLong("last_sync", 0L);
 
@@ -1078,20 +1196,25 @@ public class MainActivity extends AppCompatActivity {
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        int padding = dpToPx(16);
+        int padding = dpToPx(20);
         layout.setPadding(padding, padding, padding, padding);
+
+        TextView subtitle = createDialogDescription(R.string.provider_dialog_subtitle);
 
         EditText nameInput = new EditText(this);
         nameInput.setHint(R.string.provider_dialog_name_hint);
         nameInput.setSingleLine(true);
         nameInput.setText(prefs.getString("provider_name", TempMailApi.DEFAULT_PROVIDER_NAME));
+        applyTopMargin(nameInput, 14);
 
         EditText urlInput = new EditText(this);
         urlInput.setHint(R.string.provider_dialog_url_hint);
         urlInput.setSingleLine(true);
         urlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         urlInput.setText(prefs.getString("provider_base_url", TempMailApi.DEFAULT_BASE_URL));
+        applyTopMargin(urlInput, 12);
 
+        layout.addView(subtitle);
         layout.addView(nameInput);
         layout.addView(urlInput);
 
@@ -1137,17 +1260,26 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = dpToPx(20);
+        layout.setPadding(padding, padding, padding, padding);
+
+        TextView subtitle = createDialogDescription(R.string.password_dialog_subtitle);
+
         EditText passwordInput = new EditText(this);
-        int padding = dpToPx(16);
-        passwordInput.setPadding(padding, padding, padding, padding);
         passwordInput.setHint(R.string.password_dialog_hint);
         passwordInput.setSingleLine(true);
         passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         passwordInput.setText(prefs.getString("saved_password", ""));
+        applyTopMargin(passwordInput, 14);
+
+        layout.addView(subtitle);
+        layout.addView(passwordInput);
 
         new AlertDialog.Builder(this)
                 .setTitle(R.string.password_dialog_title)
-                .setView(passwordInput)
+                .setView(layout)
                 .setPositiveButton(R.string.password_dialog_save, (dialog, which) -> {
                     String password = passwordInput.getText() == null
                             ? ""
@@ -1162,6 +1294,24 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .setNegativeButton(R.string.provider_dialog_cancel, null)
                 .show();
+    }
+
+    private TextView createDialogDescription(int textRes) {
+        TextView textView = new TextView(this);
+        textView.setText(textRes);
+        textView.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
+        textView.setTextSize(14);
+        textView.setLineSpacing(0f, 1.1f);
+        return textView;
+    }
+
+    private void applyTopMargin(View view, int topMarginDp) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.topMargin = dpToPx(topMarginDp);
+        view.setLayoutParams(params);
     }
 
     private String normalizeBaseUrl(String baseUrl) {
