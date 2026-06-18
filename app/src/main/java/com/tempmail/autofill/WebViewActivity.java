@@ -7,6 +7,8 @@ import android.webkit.WebViewClient;
 import androidx.appcompat.app.AppCompatActivity;
 
 public class WebViewActivity extends AppCompatActivity {
+    public static final String EXTRA_URL = "url";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -15,15 +17,20 @@ public class WebViewActivity extends AppCompatActivity {
         webView.setWebViewClient(new WebViewClient());
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
-        setTitle(R.string.webview_title);
-
-        webView.loadDataWithBaseURL(
-                "https://local.tempmail.autofill/",
-                buildDemoPage(),
-                "text/html",
-                "UTF-8",
-                null
-        );
+        String targetUrl = getIntent() != null ? getIntent().getStringExtra(EXTRA_URL) : null;
+        if (targetUrl != null && !targetUrl.trim().isEmpty()) {
+            setTitle(R.string.webview_verification_title);
+            webView.loadUrl(targetUrl);
+        } else {
+            setTitle(R.string.webview_title);
+            webView.loadDataWithBaseURL(
+                    "https://local.tempmail.autofill/",
+                    buildDemoPage(),
+                    "text/html",
+                    "UTF-8",
+                    null
+            );
+        }
         setContentView(webView);
     }
 
@@ -52,6 +59,10 @@ public class WebViewActivity extends AppCompatActivity {
                 + "<input id=\"email\" name=\"email\" type=\"email\" placeholder=\"Enter your email\" />"
                 + "<label for=\"verification_code\">Verification code</label>"
                 + "<input id=\"verification_code\" name=\"verification_code\" inputmode=\"numeric\" placeholder=\"Enter verification code\" />"
+                + "<label for=\"password\">Create password</label>"
+                + "<input id=\"password\" name=\"password\" type=\"password\" placeholder=\"Create password\" />"
+                + "<label for=\"confirm_password\">Confirm password</label>"
+                + "<input id=\"confirm_password\" name=\"confirm_password\" type=\"password\" placeholder=\"Repeat password\" />"
                 + "<label>Segmented verification code</label>"
                 + "<div class=\"otp-grid\">"
                 + "<input id=\"otp_1\" name=\"otp_1\" inputmode=\"numeric\" maxlength=\"1\" placeholder=\"0\" />"

@@ -12,7 +12,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
-import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.text.TextUtils;
@@ -277,7 +276,7 @@ public class EmailFetcherService extends Service {
             return false;
         }
         try {
-            Notification notification = buildNotification(null, null);
+            Notification notification = buildNotification(null, null, null);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                         NOTIFICATION_ID,
@@ -532,7 +531,8 @@ public class EmailFetcherService extends Service {
     }
 
     private Intent buildOpenLinkIntent(String link) {
-        Intent openLinkIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
+        Intent openLinkIntent = new Intent(this, WebViewActivity.class);
+        openLinkIntent.putExtra(WebViewActivity.EXTRA_URL, link);
         openLinkIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return openLinkIntent;
     }
