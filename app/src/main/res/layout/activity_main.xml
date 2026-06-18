@@ -555,6 +555,15 @@
                     android:minHeight="52dp"
                     android:text="@string/button_set_password" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_verification_toolkit"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:minHeight="52dp"
+                    android:text="@string/button_verification_toolkit" />
+
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"

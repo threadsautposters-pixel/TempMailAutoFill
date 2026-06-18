@@ -118,6 +118,7 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         MaterialButton btnSetPassword = findViewById(R.id.btn_set_password);
+        MaterialButton btnVerificationToolkit = findViewById(R.id.btn_verification_toolkit);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
         switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
         switchAggressiveSignup = findViewById(R.id.switch_aggressive_signup);
@@ -234,6 +235,7 @@ public class MainActivity extends AppCompatActivity {
         btnOpenLink.setOnClickListener(v -> openLatestLink());
         linkValue.setOnClickListener(v -> openLatestLink());
         btnSetPassword.setOnClickListener(v -> showPasswordDialog());
+        btnVerificationToolkit.setOnClickListener(v -> showVerificationToolkitDialog());
 
         btnClearCode.setOnClickListener(v -> {
             prefs.edit()
@@ -818,6 +820,255 @@ public class MainActivity extends AppCompatActivity {
 
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
+    }
+
+    private void showVerificationToolkitDialog() {
+        if (prefs == null) {
+            return;
+        }
+
+        java.util.List<InboxStorage.InboxEntry> inboxEntries = InboxStorage.getInbox(prefs);
+        InboxStorage.InboxEntry bestEntry = findBestToolkitEntry(inboxEntries);
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = dpToPx(20);
+        layout.setPadding(padding, padding, padding, padding);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText(R.string.toolkit_subtitle);
+        subtitle.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
+        subtitle.setTextSize(14);
+
+        TextView status = new TextView(this);
+        status.setText(hasCurrentMailbox()
+                ? R.string.toolkit_status_ready
+                : R.string.toolkit_status_empty);
+        status.setTextColor(ContextCompat.getColor(this, R.color.color_text_primary));
+        status.setTextSize(14);
+        status.setPadding(0, dpToPx(14), 0, 0);
+
+        TextView stats = new TextView(this);
+        stats.setText(buildToolkitStatusBlock(inboxEntries, bestEntry));
+        stats.setTextColor(ContextCompat.getColor(this, R.color.color_text_primary));
+        stats.setTextSize(14);
+        stats.setPadding(0, dpToPx(16), 0, 0);
+
+        layout.addView(subtitle);
+        layout.addView(status);
+        layout.addView(stats);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.VERTICAL);
+        actions.setPadding(0, dpToPx(18), 0, 0);
+        final AlertDialog[] dialogHolder = new AlertDialog[1];
+
+        actions.addView(createToolkitButton(R.string.button_apply_best, v -> {
+            if (!applyBestToolkitEntry(inboxEntries)) {
+                Toast.makeText(this, R.string.toast_toolkit_no_action, Toast.LENGTH_SHORT).show();
+            }
+        }));
+        actions.addView(createToolkitButton(R.string.button_open_best_link, v -> {
+            if (!openBestToolkitLink(inboxEntries)) {
+                Toast.makeText(this, R.string.toast_toolkit_no_action, Toast.LENGTH_SHORT).show();
+            }
+        }));
+        actions.addView(createToolkitButton(R.string.button_copy_pack, v -> {
+            copyValue(buildVerificationPack(inboxEntries), R.string.toast_pack_copied);
+        }));
+        actions.addView(createToolkitButton(R.string.button_share_pack, v -> {
+            shareVerificationPack(inboxEntries);
+        }));
+        actions.addView(createToolkitButton(R.string.button_clear_inbox, v -> {
+            InboxStorage.clear(prefs);
+            updateDashboard();
+            Toast.makeText(this, R.string.toast_inbox_cleared, Toast.LENGTH_SHORT).show();
+            if (dialogHolder[0] != null) {
+                dialogHolder[0].dismiss();
+            }
+        }));
+
+        layout.addView(actions);
+        dialogHolder[0] = new AlertDialog.Builder(this)
+                .setTitle(R.string.toolkit_title)
+                .setView(layout)
+                .setPositiveButton(R.string.provider_dialog_cancel, null)
+                .create();
+        dialogHolder[0].show();
+    }
+
+    private MaterialButton createToolkitButton(int textRes, View.OnClickListener onClickListener) {
+        MaterialButton button = new MaterialButton(
+                this,
+                null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle
+        );
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dpToPx(10);
+        button.setLayoutParams(params);
+        button.setText(textRes);
+        button.setOnClickListener(onClickListener);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        return button;
+    }
+
+    private String buildToolkitStatusBlock(
+            java.util.List<InboxStorage.InboxEntry> inboxEntries,
+            InboxStorage.InboxEntry bestEntry
+    ) {
+        int linkCount = 0;
+        int codeCount = 0;
+        int actionableCount = 0;
+        for (InboxStorage.InboxEntry entry : inboxEntries) {
+            if (entry == null) {
+                continue;
+            }
+            if (entry.hasActionableValue()) {
+                actionableCount++;
+            }
+            if (entry.hasLink()) {
+                linkCount++;
+            }
+            if (entry.hasCode()) {
+                codeCount++;
+            }
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append(getString(R.string.toolkit_messages_format, inboxEntries.size(), actionableCount));
+        builder.append('\n');
+        builder.append(getString(R.string.toolkit_links_format, linkCount));
+        builder.append('\n');
+        builder.append(getString(R.string.toolkit_codes_format, codeCount));
+        builder.append('\n');
+        builder.append(resolveToolkitBestAction(bestEntry));
+        builder.append('\n');
+        if (bestEntry == null || TextUtils.isEmpty(bestEntry.subject)) {
+            builder.append(getString(R.string.toolkit_selected_message_fallback));
+        } else {
+            builder.append(getString(R.string.toolkit_selected_message, bestEntry.subject));
+        }
+        return builder.toString();
+    }
+
+    private String resolveToolkitBestAction(InboxStorage.InboxEntry bestEntry) {
+        if (bestEntry == null) {
+            return getString(R.string.toolkit_best_action_none);
+        }
+        if (bestEntry.hasLink()) {
+            return getString(R.string.toolkit_best_action_link);
+        }
+        if (bestEntry.hasCode()) {
+            return getString(R.string.toolkit_best_action_code);
+        }
+        return getString(R.string.toolkit_best_action_none);
+    }
+
+    private InboxStorage.InboxEntry findBestToolkitEntry(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        if (inboxEntries == null || inboxEntries.isEmpty()) {
+            return null;
+        }
+
+        InboxStorage.InboxEntry bestCodeEntry = null;
+        for (InboxStorage.InboxEntry entry : inboxEntries) {
+            if (entry == null || !entry.hasActionableValue()) {
+                continue;
+            }
+            if (entry.hasLink()) {
+                return entry;
+            }
+            if (bestCodeEntry == null && entry.hasCode()) {
+                bestCodeEntry = entry;
+            }
+        }
+        return bestCodeEntry;
+    }
+
+    private boolean applyBestToolkitEntry(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        InboxStorage.InboxEntry bestEntry = findBestToolkitEntry(inboxEntries);
+        if (bestEntry == null) {
+            return false;
+        }
+        applyInboxEntry(bestEntry, false);
+        return true;
+    }
+
+    private boolean openBestToolkitLink(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        InboxStorage.InboxEntry bestEntry = findBestToolkitEntry(inboxEntries);
+        if (bestEntry == null || !bestEntry.hasLink()) {
+            return false;
+        }
+        openInboxLink(bestEntry);
+        return true;
+    }
+
+    private boolean hasCurrentMailbox() {
+        return prefs != null && !TextUtils.isEmpty(prefs.getString("latest_email", ""));
+    }
+
+    private String buildVerificationPack(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        String email = prefs.getString("latest_email", "");
+        String code = prefs.getString("latest_code", "");
+        String link = prefs.getString("latest_link", "");
+        String provider = prefs.getString("latest_provider", "");
+        String password = prefs.getString("saved_password", "");
+        long lastSync = prefs.getLong("last_sync", 0L);
+
+        StringBuilder builder = new StringBuilder();
+        builder.append(getString(R.string.app_name)).append('\n');
+        builder.append("Email: ").append(TextUtils.isEmpty(email) ? "-" : email).append('\n');
+        builder.append("Provider: ").append(TextUtils.isEmpty(provider) ? "-" : provider).append('\n');
+        builder.append("Latest code: ").append(TextUtils.isEmpty(code) ? "-" : code).append('\n');
+        builder.append("Latest link: ").append(TextUtils.isEmpty(link) ? "-" : link).append('\n');
+        builder.append("Saved password: ").append(TextUtils.isEmpty(password) ? "-" : formatSavedPasswordSummary(password)).append('\n');
+        builder.append("Last sync: ").append(lastSync <= 0 ? getString(R.string.placeholder_sync) : formatTimestamp(lastSync)).append('\n');
+
+        InboxStorage.InboxEntry bestEntry = findBestToolkitEntry(inboxEntries);
+        builder.append(resolveToolkitBestAction(bestEntry)).append('\n');
+        builder.append(getString(R.string.toolkit_messages_format, inboxEntries.size(), countActionableEntries(inboxEntries))).append('\n');
+
+        int limit = Math.min(inboxEntries.size(), 3);
+        for (int i = 0; i < limit; i++) {
+            InboxStorage.InboxEntry entry = inboxEntries.get(i);
+            builder.append('\n').append("Inbox ").append(i + 1).append(": ");
+            builder.append(TextUtils.isEmpty(entry.subject) ? getString(R.string.card_inbox_title) : entry.subject);
+            if (entry.hasCode()) {
+                builder.append('\n').append("Code: ").append(entry.code);
+            }
+            if (entry.hasLink()) {
+                builder.append('\n').append("Link: ").append(entry.link);
+            }
+            if (!TextUtils.isEmpty(entry.preview)) {
+                builder.append('\n').append("Preview: ").append(entry.preview);
+            }
+        }
+        return builder.toString().trim();
+    }
+
+    private int countActionableEntries(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        int count = 0;
+        for (InboxStorage.InboxEntry entry : inboxEntries) {
+            if (entry != null && entry.hasActionableValue()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private void shareVerificationPack(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        try {
+            Intent shareIntent = new Intent(Intent.ACTION_SEND);
+            shareIntent.setType("text/plain");
+            shareIntent.putExtra(Intent.EXTRA_SUBJECT, getString(R.string.toolkit_title));
+            shareIntent.putExtra(Intent.EXTRA_TEXT, buildVerificationPack(inboxEntries));
+            startActivity(Intent.createChooser(shareIntent, getString(R.string.toolkit_title)));
+        } catch (ActivityNotFoundException exception) {
+            Toast.makeText(this, R.string.toast_share_unavailable, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showProviderDialog() {
