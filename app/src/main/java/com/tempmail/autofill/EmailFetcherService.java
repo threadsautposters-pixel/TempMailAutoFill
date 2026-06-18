@@ -277,7 +277,7 @@ public class EmailFetcherService extends Service {
             return false;
         }
         try {
-            Notification notification = buildNotification(null, null);
+            Notification notification = buildNotification(null, null, null);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                         NOTIFICATION_ID,
