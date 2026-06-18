@@ -48,11 +48,15 @@ public class MainActivity extends AppCompatActivity {
     private TextView stabilityStatus;
     private TextView emailValue;
     private TextView codeValue;
+    private TextView linkValue;
+    private TextView passwordValue;
     private TextView providerValue;
     private TextView mailboxCountdownValue;
     private TextView lastSyncValue;
     private TextView historyEmpty;
+    private TextView inboxEmpty;
     private LinearLayout historyContainer;
+    private LinearLayout inboxContainer;
     private SharedPreferences prefs;
     private SwitchMaterial switchAutoCopy;
     private SwitchMaterial switchOtpAlerts;
@@ -92,20 +96,27 @@ public class MainActivity extends AppCompatActivity {
         stabilityStatus = findViewById(R.id.stability_status);
         emailValue = findViewById(R.id.email_value);
         codeValue = findViewById(R.id.code_value);
+        linkValue = findViewById(R.id.link_value);
+        passwordValue = findViewById(R.id.password_value);
         providerValue = findViewById(R.id.provider_value);
         mailboxCountdownValue = findViewById(R.id.mailbox_countdown_value);
         lastSyncValue = findViewById(R.id.last_sync_value);
         historyEmpty = findViewById(R.id.history_empty);
+        inboxEmpty = findViewById(R.id.inbox_empty);
         historyContainer = findViewById(R.id.history_container);
+        inboxContainer = findViewById(R.id.inbox_container);
         MaterialButton btnService = findViewById(R.id.btn_start_service);
         MaterialButton btnRefresh = findViewById(R.id.btn_refresh);
         MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
         MaterialButton btnTest = findViewById(R.id.btn_test_webview);
         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
+        MaterialButton btnCopyLink = findViewById(R.id.btn_copy_link);
+        MaterialButton btnOpenLink = findViewById(R.id.btn_open_link);
         MaterialButton btnClearCode = findViewById(R.id.btn_clear_code);
         MaterialButton btnClearHistory = findViewById(R.id.btn_clear_history);
         MaterialButton btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
+        MaterialButton btnSetPassword = findViewById(R.id.btn_set_password);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
         switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
         switchAggressiveSignup = findViewById(R.id.switch_aggressive_signup);
@@ -132,6 +143,7 @@ public class MainActivity extends AppCompatActivity {
             SharedPreferences.Editor editor = prefs.edit().putBoolean("otp_detect_enabled", checked);
             if (!checked) {
                 editor.remove("last_notified_code");
+                editor.remove("last_notified_link");
             }
             editor.apply();
             updateDashboard();
@@ -173,8 +185,10 @@ public class MainActivity extends AppCompatActivity {
             prefs.edit()
                     .putBoolean("pending_force_refresh", true)
                     .remove("latest_code")
+                    .remove("latest_link")
                     .remove("last_auto_copied_code")
                     .remove("last_notified_code")
+                    .remove("last_notified_link")
                     .apply();
             if (!switchAutoFill.isChecked()) {
                 switchAutoFill.setChecked(true);
@@ -212,12 +226,21 @@ public class MainActivity extends AppCompatActivity {
                 prefs.getString("latest_code", ""),
                 R.string.toast_copied_code
         ));
+        btnCopyLink.setOnClickListener(v -> copyValue(
+                prefs.getString("latest_link", ""),
+                R.string.toast_copied_link
+        ));
+        btnOpenLink.setOnClickListener(v -> openLatestLink());
+        linkValue.setOnClickListener(v -> openLatestLink());
+        btnSetPassword.setOnClickListener(v -> showPasswordDialog());
 
         btnClearCode.setOnClickListener(v -> {
             prefs.edit()
                     .remove("latest_code")
+                    .remove("latest_link")
                     .remove("last_auto_copied_code")
                     .remove("last_notified_code")
+                    .remove("last_notified_link")
                     .apply();
             updateDashboard();
             Toast.makeText(this, R.string.toast_code_cleared, Toast.LENGTH_SHORT).show();
@@ -277,7 +300,9 @@ public class MainActivity extends AppCompatActivity {
         boolean accessibilityEnabled = isAccessibilityServiceEnabled();
         String email = prefs.getString("latest_email", "");
         String code = prefs.getString("latest_code", "");
+        String link = prefs.getString("latest_link", "");
         String provider = prefs.getString("latest_provider", "");
+        String savedPassword = prefs.getString("saved_password", "");
         String lastError = prefs.getString("last_error", "");
         long lastSync = prefs.getLong("last_sync", 0L);
         long mailboxExpiresAt = prefs.getLong("mailbox_expires_at", 0L);
@@ -342,6 +367,8 @@ public class MainActivity extends AppCompatActivity {
         stabilityStatus.setText(R.string.value_stability);
         emailValue.setText(TextUtils.isEmpty(email) ? getString(R.string.placeholder_email) : email);
         codeValue.setText(TextUtils.isEmpty(code) ? getString(R.string.placeholder_code) : formatCodeForDisplay(code));
+        linkValue.setText(TextUtils.isEmpty(link) ? getString(R.string.placeholder_link) : link);
+        passwordValue.setText(formatSavedPasswordSummary(savedPassword));
         providerValue.setText(TextUtils.isEmpty(provider) ? getString(R.string.placeholder_provider) : provider);
         mailboxCountdownValue.setText(formatMailboxCountdown(enabled, serviceActive, mailboxExpiresAt));
         MaterialButton btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
@@ -359,6 +386,7 @@ public class MainActivity extends AppCompatActivity {
                 : DateFormat.getMediumDateFormat(this).format(new Date(lastSync))
                 + " "
                 + DateFormat.getTimeFormat(this).format(new Date(lastSync)));
+        renderInbox();
         renderHistory();
     }
 
@@ -512,6 +540,79 @@ public class MainActivity extends AppCompatActivity {
         return item;
     }
 
+    private void renderInbox() {
+        inboxContainer.removeAllViews();
+        java.util.List<InboxStorage.InboxEntry> inboxEntries = InboxStorage.getInbox(prefs);
+        boolean hasItems = !inboxEntries.isEmpty();
+        inboxEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
+        inboxContainer.setVisibility(hasItems ? View.VISIBLE : View.GONE);
+
+        for (InboxStorage.InboxEntry entry : inboxEntries) {
+            inboxContainer.addView(createInboxItemView(entry));
+        }
+    }
+
+    private View createInboxItemView(InboxStorage.InboxEntry entry) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setBackgroundResource(R.drawable.bg_history_item);
+        int padding = dpToPx(16);
+        item.setPadding(padding, padding, padding, padding);
+
+        LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        layoutParams.bottomMargin = dpToPx(10);
+        item.setLayoutParams(layoutParams);
+
+        TextView title = new TextView(this);
+        title.setText(TextUtils.isEmpty(entry.subject) ? getString(R.string.card_inbox_title) : entry.subject);
+        title.setTextColor(ContextCompat.getColor(this, R.color.color_text_primary));
+        title.setTextSize(15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+
+        TextView subtitle = new TextView(this);
+        String fromText = TextUtils.isEmpty(entry.from)
+                ? getString(R.string.inbox_timestamp_unknown)
+                : getString(R.string.inbox_from_format, entry.from);
+        subtitle.setText(fromText);
+        subtitle.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
+        subtitle.setTextSize(13);
+        subtitle.setPadding(0, dpToPx(6), 0, 0);
+
+        TextView preview = new TextView(this);
+        preview.setText(buildInboxPreview(entry));
+        preview.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
+        preview.setTextSize(13);
+        preview.setPadding(0, dpToPx(6), 0, 0);
+
+        item.addView(title);
+        item.addView(subtitle);
+        item.addView(preview);
+        item.setOnClickListener(v -> {
+            if (entry.hasLink()) {
+                openLink(entry.link);
+            } else if (entry.hasCode()) {
+                copyValue(entry.code, R.string.toast_copied_code);
+            }
+        });
+        return item;
+    }
+
+    private String buildInboxPreview(InboxStorage.InboxEntry entry) {
+        if (entry.hasLink()) {
+            return getString(R.string.inbox_link_available);
+        }
+        if (entry.hasCode()) {
+            return getString(R.string.inbox_code_format, entry.code);
+        }
+        if (!TextUtils.isEmpty(entry.preview)) {
+            return entry.preview;
+        }
+        return TextUtils.isEmpty(entry.timestamp) ? getString(R.string.inbox_timestamp_unknown) : entry.timestamp;
+    }
+
     private String formatTimestamp(long timestamp) {
         Date date = new Date(timestamp);
         return DateFormat.getMediumDateFormat(this).format(date)
@@ -614,7 +715,9 @@ public class MainActivity extends AppCompatActivity {
                     SharedPreferences.Editor editor = prefs.edit()
                             .putBoolean("pending_force_refresh", true)
                             .remove("latest_code")
-                            .remove("last_auto_copied_code");
+                            .remove("latest_link")
+                            .remove("last_auto_copied_code")
+                            .remove("last_notified_link");
 
                     if (TextUtils.isEmpty(baseUrl)) {
                         editor.remove("provider_base_url");
@@ -639,12 +742,64 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    private void showPasswordDialog() {
+        if (prefs == null) {
+            return;
+        }
+
+        EditText passwordInput = new EditText(this);
+        int padding = dpToPx(16);
+        passwordInput.setPadding(padding, padding, padding, padding);
+        passwordInput.setHint(R.string.password_dialog_hint);
+        passwordInput.setSingleLine(true);
+        passwordInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        passwordInput.setText(prefs.getString("saved_password", ""));
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.password_dialog_title)
+                .setView(passwordInput)
+                .setPositiveButton(R.string.password_dialog_save, (dialog, which) -> {
+                    String password = passwordInput.getText() == null
+                            ? ""
+                            : passwordInput.getText().toString();
+                    prefs.edit().putString("saved_password", password.trim()).apply();
+                    updateDashboard();
+                    Toast.makeText(this, R.string.toast_password_saved, Toast.LENGTH_SHORT).show();
+                })
+                .setNeutralButton(R.string.password_dialog_clear, (dialog, which) -> {
+                    prefs.edit().remove("saved_password").apply();
+                    updateDashboard();
+                })
+                .setNegativeButton(R.string.provider_dialog_cancel, null)
+                .show();
+    }
+
     private String normalizeBaseUrl(String baseUrl) {
         String normalized = baseUrl == null ? "" : baseUrl.trim();
         while (normalized.endsWith("/")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
         return normalized;
+    }
+
+    private void openLatestLink() {
+        openLink(prefs.getString("latest_link", ""));
+    }
+
+    private void openLink(String link) {
+        if (TextUtils.isEmpty(link)) {
+            Toast.makeText(this, R.string.toast_open_link_unavailable, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
+        startActivity(intent);
+    }
+
+    private String formatSavedPasswordSummary(String password) {
+        if (TextUtils.isEmpty(password)) {
+            return getString(R.string.placeholder_password);
+        }
+        return getString(R.string.password_mask_format, password.length());
     }
 
     private void requestNotificationPermissionIfNeeded() {
