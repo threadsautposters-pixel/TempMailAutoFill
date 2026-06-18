@@ -31,9 +31,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.widget.NestedScrollView;
 
-import com.google.android.material.bottomappbar.BottomAppBar;
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import java.util.Date;
@@ -44,6 +42,7 @@ public class MainActivity extends AppCompatActivity {
     private SwitchMaterial switchAggressiveSignup;
     private TextView statusText;
     private TextView statusBadge;
+    private TextView titleStateBadge;
     private TextView accessibilityStatus;
     private TextView serviceStatus;
     private TextView stabilityStatus;
@@ -52,10 +51,15 @@ public class MainActivity extends AppCompatActivity {
     private TextView linkValue;
     private TextView passwordValue;
     private TextView providerValue;
+    private TextView providerValueSettings;
+    private TextView providerBaseUrl;
     private TextView mailboxCountdownValue;
     private TextView lastSyncValue;
     private TextView historyEmpty;
     private TextView inboxEmpty;
+    private TextView mainToggleSymbol;
+    private TextView inboxMeta;
+    private TextView historyMeta;
     private LinearLayout historyContainer;
     private LinearLayout inboxContainer;
     private SharedPreferences prefs;
@@ -63,12 +67,36 @@ public class MainActivity extends AppCompatActivity {
     private SwitchMaterial switchOtpAlerts;
     private final Handler dashboardHandler = new Handler(Looper.getMainLooper());
     private NestedScrollView mainScroll;
-    private View historyAnchor;
-    private View automationAnchor;
-    private MaterialButton btnToggleAutomation;
+    private View dashboardScreen;
+    private View inboxScreen;
+    private View historyScreen;
+    private View settingsScreen;
+    private View mainToggleShell;
+    private View toggleRingOuter;
+    private View toggleRingInner;
+    private View accessibilityDot;
+    private View serviceDot;
+    private View stabilityDot;
+    private View navDashboard;
+    private View navInbox;
+    private View navHistory;
+    private View navSettings;
+    private View navDashboardIndicator;
+    private View navInboxIndicator;
+    private View navHistoryIndicator;
+    private View navSettingsIndicator;
+    private TextView navDashboardIcon;
+    private TextView navInboxIcon;
+    private TextView navHistoryIcon;
+    private TextView navSettingsIcon;
+    private TextView navDashboardLabel;
+    private TextView navInboxLabel;
+    private TextView navHistoryLabel;
+    private TextView navSettingsLabel;
     private MaterialButton btnLifetimePreset;
-    private FloatingActionButton fabStartAutomation;
+    private MaterialButton btnConfigureProvider;
     private AlertDialog accessibilityDialog;
+    private String currentPage = "dashboard";
     private final Runnable dashboardTicker = new Runnable() {
         @Override
         public void run() {
@@ -86,13 +114,37 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         mainScroll = findViewById(R.id.main_scroll);
-        historyAnchor = findViewById(R.id.anchor_history);
-        automationAnchor = findViewById(R.id.anchor_automation);
-        BottomAppBar bottomAppBar = findViewById(R.id.bottom_app_bar);
-        fabStartAutomation = findViewById(R.id.fab_start_automation);
+        dashboardScreen = findViewById(R.id.dashboard_screen);
+        inboxScreen = findViewById(R.id.inbox_screen);
+        historyScreen = findViewById(R.id.history_screen);
+        settingsScreen = findViewById(R.id.settings_screen);
+        mainToggleShell = findViewById(R.id.main_toggle_shell);
+        toggleRingOuter = findViewById(R.id.toggle_ring_outer);
+        toggleRingInner = findViewById(R.id.toggle_ring_inner);
+        mainToggleSymbol = findViewById(R.id.main_toggle_symbol);
+        navDashboard = findViewById(R.id.nav_dashboard);
+        navInbox = findViewById(R.id.nav_inbox);
+        navHistory = findViewById(R.id.nav_history);
+        navSettings = findViewById(R.id.nav_settings);
+        navDashboardIndicator = findViewById(R.id.nav_dashboard_indicator);
+        navInboxIndicator = findViewById(R.id.nav_inbox_indicator);
+        navHistoryIndicator = findViewById(R.id.nav_history_indicator);
+        navSettingsIndicator = findViewById(R.id.nav_settings_indicator);
+        navDashboardIcon = findViewById(R.id.nav_dashboard_icon);
+        navInboxIcon = findViewById(R.id.nav_inbox_icon);
+        navHistoryIcon = findViewById(R.id.nav_history_icon);
+        navSettingsIcon = findViewById(R.id.nav_settings_icon);
+        navDashboardLabel = findViewById(R.id.nav_dashboard_label);
+        navInboxLabel = findViewById(R.id.nav_inbox_label);
+        navHistoryLabel = findViewById(R.id.nav_history_label);
+        navSettingsLabel = findViewById(R.id.nav_settings_label);
+        accessibilityDot = findViewById(R.id.accessibility_dot);
+        serviceDot = findViewById(R.id.service_dot);
+        stabilityDot = findViewById(R.id.stability_dot);
 
         switchAutoFill = findViewById(R.id.switch_auto);
         statusBadge = findViewById(R.id.status_badge);
+        titleStateBadge = findViewById(R.id.title_state_badge);
         statusText = findViewById(R.id.status_text);
         accessibilityStatus = findViewById(R.id.accessibility_status);
         serviceStatus = findViewById(R.id.service_status);
@@ -102,15 +154,18 @@ public class MainActivity extends AppCompatActivity {
         linkValue = findViewById(R.id.link_value);
         passwordValue = findViewById(R.id.password_value);
         providerValue = findViewById(R.id.provider_value);
+        providerValueSettings = findViewById(R.id.provider_value_settings);
+        providerBaseUrl = findViewById(R.id.provider_base_url);
         mailboxCountdownValue = findViewById(R.id.mailbox_countdown_value);
         lastSyncValue = findViewById(R.id.last_sync_value);
         historyEmpty = findViewById(R.id.history_empty);
         inboxEmpty = findViewById(R.id.inbox_empty);
+        inboxMeta = findViewById(R.id.inbox_meta);
+        historyMeta = findViewById(R.id.history_meta);
         historyContainer = findViewById(R.id.history_container);
         inboxContainer = findViewById(R.id.inbox_container);
         MaterialButton btnService = findViewById(R.id.btn_start_service);
         MaterialButton btnRefresh = findViewById(R.id.btn_refresh);
-        btnToggleAutomation = findViewById(R.id.btn_toggle_automation);
         MaterialButton btnTest = findViewById(R.id.btn_test_webview);
         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
@@ -121,6 +176,7 @@ public class MainActivity extends AppCompatActivity {
         btnLifetimePreset = findViewById(R.id.btn_lifetime_preset);
         MaterialButton btnSetPassword = findViewById(R.id.btn_set_password);
         MaterialButton btnVerificationToolkit = findViewById(R.id.btn_verification_toolkit);
+        btnConfigureProvider = findViewById(R.id.btn_configure_provider);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
         switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
         switchAggressiveSignup = findViewById(R.id.switch_aggressive_signup);
@@ -161,17 +217,8 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
         });
 
-        btnToggleAutomation.setOnClickListener(v -> {
-            if (switchAutoFill.isChecked()) {
-                switchAutoFill.setChecked(false);
-            } else {
-                switchAutoFill.setChecked(true);
-            }
-            updateDashboard();
-        });
-
-        if (fabStartAutomation != null) {
-            fabStartAutomation.setOnClickListener(v -> {
+        if (mainToggleShell != null) {
+            mainToggleShell.setOnClickListener(v -> {
                 if (switchAutoFill.isChecked()) {
                     switchAutoFill.setChecked(false);
                 } else {
@@ -181,8 +228,17 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
-        if (bottomAppBar != null) {
-            bottomAppBar.setOnMenuItemClickListener(item -> handleBottomNav(item.getItemId()));
+        if (navDashboard != null) {
+            navDashboard.setOnClickListener(v -> showPage("dashboard"));
+        }
+        if (navInbox != null) {
+            navInbox.setOnClickListener(v -> showPage("inbox"));
+        }
+        if (navHistory != null) {
+            navHistory.setOnClickListener(v -> showPage("history"));
+        }
+        if (navSettings != null) {
+            navSettings.setOnClickListener(v -> showPage("settings"));
         }
 
         btnRefresh.setOnClickListener(v -> {
@@ -258,8 +314,12 @@ public class MainActivity extends AppCompatActivity {
         });
 
         providerValue.setOnClickListener(v -> showProviderDialog());
+        if (btnConfigureProvider != null) {
+            btnConfigureProvider.setOnClickListener(v -> showProviderDialog());
+        }
 
         requestNotificationPermissionIfNeeded();
+        showPage(currentPage);
         updateDashboard();
     }
 
@@ -366,32 +426,34 @@ public class MainActivity extends AppCompatActivity {
         ));
 
         updateStabilityStatus(enabled, accessibilityEnabled, serviceActive);
-        setDashboardValue(emailValue, email, R.string.placeholder_email);
+        updateTopStateBadge(enabled);
+        updateMainToggleState(enabled);
+        updateStatusDot(accessibilityDot, accessibilityEnabled ? R.color.color_success : R.color.color_warning);
+        updateStatusDot(serviceDot, serviceActive ? R.color.color_success : R.color.color_warning);
+        updateStatusDot(stabilityDot, enabled ? R.color.color_success : R.color.color_text_muted);
+        setDashboardValue(emailValue, email, R.string.placeholder_email_short);
         setDashboardValue(codeValue,
                 TextUtils.isEmpty(code) ? "" : formatCodeForDisplay(code),
-                R.string.placeholder_code);
-        setDashboardValue(linkValue, link, R.string.placeholder_link);
+                R.string.placeholder_code_visual);
+        setDashboardValue(linkValue, link, R.string.placeholder_link_short);
         setDashboardValue(passwordValue,
                 TextUtils.isEmpty(savedPassword) ? "" : formatSavedPasswordSummary(savedPassword),
-                R.string.placeholder_password);
-        setDashboardValue(providerValue, provider, R.string.placeholder_provider);
+                R.string.placeholder_password_short);
+        setDashboardValue(providerValue, provider, R.string.placeholder_provider_short);
+        setDashboardValue(providerValueSettings, provider, R.string.placeholder_provider_short);
+        setDashboardValue(
+                providerBaseUrl,
+                prefs.getString("provider_base_url", TempMailApi.DEFAULT_BASE_URL),
+                R.string.provider_base_default
+        );
         updateMailboxCountdownState(enabled, serviceActive, mailboxExpiresAt);
-        if (btnToggleAutomation != null) {
-            btnToggleAutomation.setText(enabled ? R.string.button_stop_automation : R.string.button_start_automation);
-            btnToggleAutomation.setIconResource(enabled ? R.drawable.ic_stop_24 : R.drawable.ic_play_24);
-        }
-        if (fabStartAutomation != null) {
-            fabStartAutomation.setImageResource(enabled ? R.drawable.ic_stop_24 : R.drawable.ic_play_24);
-            fabStartAutomation.setContentDescription(getString(
-                    enabled ? R.string.button_stop_automation : R.string.nav_start_automation
-            ));
-        }
         if (btnLifetimePreset != null) {
             btnLifetimePreset.setText(getLifetimeButtonText(mailboxLifetimeMinutes));
         }
         setDashboardValue(lastSyncValue, formatLastSync(lastSync), R.string.placeholder_sync);
         renderInbox();
         renderHistory();
+        updateNavState();
     }
 
     private void updateStatusSummary(
@@ -436,6 +498,50 @@ public class MainActivity extends AppCompatActivity {
         stabilityStatus.setTextColor(ContextCompat.getColor(this, colorRes));
     }
 
+    private void updateTopStateBadge(boolean enabled) {
+        if (titleStateBadge == null) {
+            return;
+        }
+        titleStateBadge.setText(enabled ? R.string.title_badge_active : R.string.title_badge_stopped);
+        titleStateBadge.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(
+                this,
+                enabled ? R.color.color_primary_light : R.color.color_muted_bg
+        )));
+        titleStateBadge.setTextColor(ContextCompat.getColor(
+                this,
+                enabled ? R.color.color_primary : R.color.color_text_secondary
+        ));
+    }
+
+    private void updateMainToggleState(boolean enabled) {
+        if (mainToggleSymbol == null) {
+            return;
+        }
+        mainToggleSymbol.setText(enabled ? "X" : ">");
+        mainToggleSymbol.setBackgroundResource(enabled
+                ? R.drawable.bg_toggle_core_active
+                : R.drawable.bg_toggle_core_inactive);
+        mainToggleSymbol.setTextColor(ContextCompat.getColor(
+                this,
+                enabled ? R.color.color_danger : R.color.color_primary
+        ));
+        if (toggleRingOuter != null) {
+            toggleRingOuter.setVisibility(enabled ? View.VISIBLE : View.INVISIBLE);
+            toggleRingOuter.setAlpha(enabled ? 0.15f : 0f);
+        }
+        if (toggleRingInner != null) {
+            toggleRingInner.setVisibility(enabled ? View.VISIBLE : View.INVISIBLE);
+            toggleRingInner.setAlpha(enabled ? 0.35f : 0f);
+        }
+    }
+
+    private void updateStatusDot(View dot, int colorRes) {
+        if (dot == null) {
+            return;
+        }
+        dot.setBackgroundTintList(ColorStateList.valueOf(ContextCompat.getColor(this, colorRes)));
+    }
+
     private void setDashboardValue(TextView textView, String value, int placeholderRes) {
         boolean hasValue = !TextUtils.isEmpty(value);
         textView.setText(hasValue ? value : getString(placeholderRes));
@@ -478,35 +584,44 @@ public class MainActivity extends AppCompatActivity {
         return prefs.getString("provider_name", "");
     }
 
-    private boolean handleBottomNav(int itemId) {
-        if (itemId == R.id.nav_home) {
-            if (mainScroll != null) {
-                mainScroll.smoothScrollTo(0, 0);
-            }
-            return true;
+    private void showPage(String page) {
+        currentPage = page;
+        if (dashboardScreen != null) {
+            dashboardScreen.setVisibility("dashboard".equals(page) ? View.VISIBLE : View.GONE);
         }
-        if (itemId == R.id.nav_automation) {
-            scrollToAnchor(automationAnchor);
-            return true;
+        if (inboxScreen != null) {
+            inboxScreen.setVisibility("inbox".equals(page) ? View.VISIBLE : View.GONE);
         }
-        if (itemId == R.id.nav_history) {
-            scrollToAnchor(historyAnchor);
-            return true;
+        if (historyScreen != null) {
+            historyScreen.setVisibility("history".equals(page) ? View.VISIBLE : View.GONE);
         }
-        if (itemId == R.id.nav_settings) {
-            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            intent.setData(Uri.fromParts("package", getPackageName(), null));
-            startActivity(intent);
-            return true;
+        if (settingsScreen != null) {
+            settingsScreen.setVisibility("settings".equals(page) ? View.VISIBLE : View.GONE);
         }
-        return false;
+        if (mainScroll != null) {
+            mainScroll.post(() -> mainScroll.smoothScrollTo(0, 0));
+        }
+        updateNavState();
     }
 
-    private void scrollToAnchor(View anchor) {
-        if (mainScroll == null || anchor == null) {
-            return;
+    private void updateNavState() {
+        updateNavItem("dashboard".equals(currentPage), navDashboardIcon, navDashboardLabel, navDashboardIndicator);
+        updateNavItem("inbox".equals(currentPage), navInboxIcon, navInboxLabel, navInboxIndicator);
+        updateNavItem("history".equals(currentPage), navHistoryIcon, navHistoryLabel, navHistoryIndicator);
+        updateNavItem("settings".equals(currentPage), navSettingsIcon, navSettingsLabel, navSettingsIndicator);
+    }
+
+    private void updateNavItem(boolean active, TextView icon, TextView label, View indicator) {
+        int color = ContextCompat.getColor(this, active ? R.color.color_primary : R.color.color_text_muted);
+        if (icon != null) {
+            icon.setTextColor(color);
         }
-        mainScroll.post(() -> mainScroll.smoothScrollTo(0, anchor.getTop()));
+        if (label != null) {
+            label.setTextColor(color);
+        }
+        if (indicator != null) {
+            indicator.setVisibility(active ? View.VISIBLE : View.INVISIBLE);
+        }
     }
 
     private void maybePromptAccessibilityRequired() {
@@ -586,6 +701,9 @@ public class MainActivity extends AppCompatActivity {
         boolean hasItems = !historyEntries.isEmpty();
         historyEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
         historyContainer.setVisibility(hasItems ? View.VISIBLE : View.GONE);
+        if (historyMeta != null) {
+            historyMeta.setText(getString(R.string.history_meta_format, historyEntries.size()));
+        }
 
         for (HistoryStorage.HistoryEntry entry : historyEntries) {
             historyContainer.addView(createHistoryItemView(entry));
@@ -646,6 +764,13 @@ public class MainActivity extends AppCompatActivity {
         boolean hasItems = !inboxEntries.isEmpty();
         inboxEmpty.setVisibility(hasItems ? View.GONE : View.VISIBLE);
         inboxContainer.setVisibility(hasItems ? View.VISIBLE : View.GONE);
+        if (inboxMeta != null) {
+            inboxMeta.setText(getString(
+                    R.string.inbox_meta_format,
+                    inboxEntries.size(),
+                    countActionableEntries(inboxEntries)
+            ));
+        }
 
         for (InboxStorage.InboxEntry entry : inboxEntries) {
             inboxContainer.addView(createInboxItemView(entry));
@@ -1341,9 +1466,14 @@ public class MainActivity extends AppCompatActivity {
 
     private String formatSavedPasswordSummary(String password) {
         if (TextUtils.isEmpty(password)) {
-            return getString(R.string.placeholder_password);
+            return getString(R.string.placeholder_password_short);
         }
-        return getString(R.string.password_mask_format, password.length());
+        int visibleLength = Math.max(8, password.length());
+        StringBuilder builder = new StringBuilder(visibleLength);
+        for (int i = 0; i < visibleLength; i++) {
+            builder.append('*');
+        }
+        return builder.toString();
     }
 
     private void requestNotificationPermissionIfNeeded() {
