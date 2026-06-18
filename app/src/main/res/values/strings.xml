@@ -4,7 +4,9 @@
     <string name="dashboard_eyebrow">Verification Workspace</string>
     <string name="dashboard_title">A more powerful, professional temp mail dashboard</string>
     <string name="dashboard_subtitle">Track live mailbox state, review recent email history, keep autofill stable, and move through verification flows with less friction.</string>
+    <string name="dashboard_hint">Refresh the mailbox, then jump into sign-up flows with the latest email, code, and verification link ready.</string>
     <string name="section_home">Home</string>
+    <string name="section_automation">Automation</string>
     <string name="section_history">History</string>
     <string name="card_overview_title">Control Center</string>
     <string name="card_overview_subtitle">Track readiness, inbox health, compatibility, and the latest values before opening a sign-up flow.</string>
@@ -50,6 +52,9 @@
     <string name="value_service_off">Idle</string>
     <string name="value_stability">Foreground protected</string>
     <string name="card_mailbox_title">Mailbox Snapshot</string>
+    <string name="card_mailbox_subtitle">Pin the latest email, OTP, provider, and verification link in one place so the active mailbox is always easy to review.</string>
+    <string name="card_automation_title">Automation Actions</string>
+    <string name="card_automation_subtitle">Launch the helper, test signup flows, tune alerts, and keep autofill behavior aligned with your current verification setup.</string>
     <string name="label_email">Current temp email</string>
     <string name="label_code">Latest verification code</string>
     <string name="label_link">Latest verification link</string>
