@@ -10,7 +10,7 @@ import java.util.List;
 
 public final class InboxStorage {
     private static final String KEY_INBOX = "inbox_messages";
-    private static final int MAX_INBOX_ITEMS = 8;
+    private static final int MAX_INBOX_ITEMS = 20;
 
     private InboxStorage() {}
 
@@ -108,6 +108,10 @@ public final class InboxStorage {
 
         public boolean hasCode() {
             return code != null && !code.trim().isEmpty();
+        }
+
+        public boolean hasActionableValue() {
+            return hasLink() || hasCode();
         }
     }
 }

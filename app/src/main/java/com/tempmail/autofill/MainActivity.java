@@ -1,6 +1,7 @@
 package com.tempmail.autofill;
 
 import android.Manifest;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
@@ -573,10 +574,7 @@ public class MainActivity extends AppCompatActivity {
         title.setTypeface(Typeface.DEFAULT_BOLD);
 
         TextView subtitle = new TextView(this);
-        String fromText = TextUtils.isEmpty(entry.from)
-                ? getString(R.string.inbox_timestamp_unknown)
-                : getString(R.string.inbox_from_format, entry.from);
-        subtitle.setText(fromText);
+        subtitle.setText(buildInboxMetadata(entry));
         subtitle.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
         subtitle.setTextSize(13);
         subtitle.setPadding(0, dpToPx(6), 0, 0);
@@ -590,27 +588,168 @@ public class MainActivity extends AppCompatActivity {
         item.addView(title);
         item.addView(subtitle);
         item.addView(preview);
-        item.setOnClickListener(v -> {
-            if (entry.hasLink()) {
-                openLink(entry.link);
-            } else if (entry.hasCode()) {
-                copyValue(entry.code, R.string.toast_copied_code);
-            }
-        });
+        if (entry.hasActionableValue()) {
+            TextView helper = new TextView(this);
+            helper.setText(buildInboxActionHint(entry));
+            helper.setTextColor(ContextCompat.getColor(this, R.color.color_primary));
+            helper.setTextSize(12);
+            helper.setPadding(0, dpToPx(10), 0, 0);
+            item.addView(helper);
+            item.addView(createInboxActionRow(entry));
+            item.setOnClickListener(v -> applyInboxEntry(entry, false));
+        }
         return item;
     }
 
     private String buildInboxPreview(InboxStorage.InboxEntry entry) {
+        if (entry.hasLink() && entry.hasCode()) {
+            return getString(R.string.inbox_code_format, entry.code) + " • " + getString(R.string.inbox_link_available);
+        }
         if (entry.hasLink()) {
+            if (!TextUtils.isEmpty(entry.preview)) {
+                return entry.preview + "\n" + getString(R.string.inbox_link_available);
+            }
             return getString(R.string.inbox_link_available);
         }
         if (entry.hasCode()) {
+            if (!TextUtils.isEmpty(entry.preview)) {
+                return entry.preview + "\n" + getString(R.string.inbox_code_format, entry.code);
+            }
             return getString(R.string.inbox_code_format, entry.code);
         }
         if (!TextUtils.isEmpty(entry.preview)) {
             return entry.preview;
         }
         return TextUtils.isEmpty(entry.timestamp) ? getString(R.string.inbox_timestamp_unknown) : entry.timestamp;
+    }
+
+    private String buildInboxMetadata(InboxStorage.InboxEntry entry) {
+        String fromText = TextUtils.isEmpty(entry.from) ? "" : getString(R.string.inbox_from_format, entry.from);
+        String timeText = formatInboxTimestamp(entry.timestamp);
+        if (!TextUtils.isEmpty(fromText) && !TextUtils.isEmpty(timeText)) {
+            return fromText + " • " + timeText;
+        }
+        if (!TextUtils.isEmpty(fromText)) {
+            return fromText;
+        }
+        if (!TextUtils.isEmpty(timeText)) {
+            return timeText;
+        }
+        return getString(R.string.inbox_timestamp_unknown);
+    }
+
+    private String buildInboxActionHint(InboxStorage.InboxEntry entry) {
+        if (entry.hasLink() && entry.hasCode()) {
+            return getString(R.string.inbox_action_hint_link_code);
+        }
+        if (entry.hasLink()) {
+            return getString(R.string.inbox_action_hint_link);
+        }
+        return getString(R.string.inbox_action_hint_code);
+    }
+
+    private View createInboxActionRow(InboxStorage.InboxEntry entry) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dpToPx(12), 0, 0);
+
+        row.addView(createInboxActionButton(
+                R.string.button_use_now,
+                v -> applyInboxEntry(entry, false)
+        ));
+
+        if (entry.hasLink()) {
+            row.addView(createInboxActionButton(
+                    R.string.button_open_link,
+                    v -> openInboxLink(entry)
+            ));
+        }
+
+        if (entry.hasCode()) {
+            row.addView(createInboxActionButton(
+                    R.string.button_copy_code,
+                    v -> copyValue(entry.code, R.string.toast_copied_code)
+            ));
+        }
+
+        return row;
+    }
+
+    private MaterialButton createInboxActionButton(int textRes, View.OnClickListener onClickListener) {
+        MaterialButton button = new MaterialButton(
+                this,
+                null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle
+        );
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+        );
+        params.rightMargin = dpToPx(8);
+        button.setLayoutParams(params);
+        button.setText(textRes);
+        button.setOnClickListener(onClickListener);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        return button;
+    }
+
+    private void applyInboxEntry(InboxStorage.InboxEntry entry, boolean silent) {
+        if (prefs == null || entry == null || !entry.hasActionableValue()) {
+            return;
+        }
+
+        SharedPreferences.Editor editor = prefs.edit();
+        boolean updated = false;
+        if (entry.hasCode()) {
+            editor.putString("latest_code", entry.code.trim());
+            updated = true;
+        }
+        if (entry.hasLink()) {
+            editor.putString("latest_link", entry.link.trim());
+            updated = true;
+        }
+        if (!updated) {
+            return;
+        }
+        editor.apply();
+        updateDashboard();
+        if (!silent) {
+            int messageRes = entry.hasLink() && entry.hasCode()
+                    ? R.string.toast_inbox_applied
+                    : entry.hasLink()
+                    ? R.string.toast_inbox_link_applied
+                    : R.string.toast_inbox_code_applied;
+            Toast.makeText(this, messageRes, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openInboxLink(InboxStorage.InboxEntry entry) {
+        if (entry == null || !entry.hasLink()) {
+            openLink(null);
+            return;
+        }
+        applyInboxEntry(entry, true);
+        openLink(entry.link);
+    }
+
+    private String formatInboxTimestamp(String rawTimestamp) {
+        if (TextUtils.isEmpty(rawTimestamp)) {
+            return "";
+        }
+        String value = rawTimestamp.trim().replace('T', ' ');
+        int dotIndex = value.indexOf('.');
+        if (dotIndex >= 0) {
+            value = value.substring(0, dotIndex);
+        }
+        if (value.endsWith("Z")) {
+            value = value.substring(0, value.length() - 1).trim() + " UTC";
+        }
+        if (value.length() > 19 && !value.endsWith("UTC")) {
+            value = value.substring(0, 19);
+        }
+        return value;
     }
 
     private String formatTimestamp(long timestamp) {
@@ -791,8 +930,12 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, R.string.toast_open_link_unavailable, Toast.LENGTH_SHORT).show();
             return;
         }
-        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
-        startActivity(intent);
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
+            startActivity(intent);
+        } catch (ActivityNotFoundException exception) {
+            Toast.makeText(this, R.string.toast_open_link_failed, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private String formatSavedPasswordSummary(String password) {
