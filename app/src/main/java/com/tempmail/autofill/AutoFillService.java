@@ -25,6 +25,7 @@ public class AutoFillService extends AccessibilityService {
     private static final int CODE_SCORE_THRESHOLD = 140;
     private static final int PASSWORD_SCORE_THRESHOLD = 150;
     private static final int AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD = 85;
+    private static final int STRICT_SIGNUP_CONTEXT_THRESHOLD = 140;
     private static final int EMAIL_NEAR_BEST_DELTA = 25;
     private static final int PASSWORD_NEAR_BEST_DELTA = 20;
     private static final long DEFERRED_SCAN_DELAY_MS = 180L;
@@ -391,6 +392,26 @@ public class AutoFillService extends AccessibilityService {
         return scoreSignupContext(signature) >= 90;
     }
 
+    private boolean isStrictSignupContext(String signature) {
+        if (scoreSignupContext(signature) < STRICT_SIGNUP_CONTEXT_THRESHOLD) {
+            return false;
+        }
+        return containsAny(
+                signature,
+                "sign up",
+                "signup",
+                "register",
+                "create account",
+                "create your account",
+                "join",
+                "get started",
+                "start for free",
+                "new account",
+                "open account",
+                "create profile"
+        );
+    }
+
     private int scoreSignupContext(String signature) {
         if (TextUtils.isEmpty(signature)) {
             return 0;
@@ -554,6 +575,7 @@ public class AutoFillService extends AccessibilityService {
                 && emailScore >= AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD
                 && emailScore >= codeScore
                 && emailScore >= passwordScore
+                && isStrictSignupContext(windowSignature)
                 && isLikelySignupTextField(focusedNode, nodeContext, windowSignature)
                 && fillNode(focusedNode, email)) {
             return true;
@@ -603,6 +625,10 @@ public class AutoFillService extends AccessibilityService {
         }
 
         if (!aggressiveSignupAutofill) {
+            return false;
+        }
+
+        if (!isStrictSignupContext(windowSignature)) {
             return false;
         }
 
@@ -667,7 +693,7 @@ public class AutoFillService extends AccessibilityService {
             int threshold
     ) {
         Candidate best = null;
-        boolean signupContext = isSignupContext(windowSignature);
+        boolean signupContext = isStrictSignupContext(windowSignature);
         for (AccessibilityNodeInfo node : fields) {
             String nodeContext = buildNodeContext(node);
             int score = scoreEmailCandidate(node, nodeContext, windowSignature, false);
@@ -958,10 +984,13 @@ public class AutoFillService extends AccessibilityService {
             String nodeContext,
             String windowSignature
     ) {
-        if (!canAcceptText(node) || !isSignupContext(windowSignature)) {
+        if (!canAcceptText(node) || !isStrictSignupContext(windowSignature)) {
             return false;
         }
         if (!isPlainTextInputType(node.getInputType()) && !isEmailInputType(node.getInputType())) {
+            return false;
+        }
+        if (isUnsafeGenericTextField(node, nodeContext)) {
             return false;
         }
         if (containsAny(
@@ -976,11 +1005,57 @@ public class AutoFillService extends AccessibilityService {
                 "mobile",
                 "first name",
                 "last name",
-                "full name"
+                "full name",
+                "bio",
+                "about",
+                "address",
+                "street",
+                "city",
+                "state",
+                "zip",
+                "postal"
         )) {
             return false;
         }
-        return true;
+        return isEmailInputType(node.getInputType())
+                || containsAny(
+                nodeContext,
+                "email",
+                "mail",
+                "username",
+                "user name",
+                "account",
+                "login",
+                "identifier"
+        );
+    }
+
+    private boolean isUnsafeGenericTextField(AccessibilityNodeInfo node, String nodeContext) {
+        if (node == null) {
+            return true;
+        }
+        if (isMultiLineInputType(node.getInputType())) {
+            return true;
+        }
+        int maxLength = node.getMaxTextLength();
+        if (maxLength > 0 && maxLength <= 2) {
+            return true;
+        }
+        return containsAny(
+                nodeContext,
+                "search",
+                "comment",
+                "message",
+                "reply",
+                "chat",
+                "caption",
+                "post",
+                "notes",
+                "feedback",
+                "review",
+                "title",
+                "subject"
+        );
     }
 
     private boolean isEmailInputType(int inputType) {

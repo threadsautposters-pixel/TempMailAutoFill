@@ -24,12 +24,12 @@
     <string name="switch_title">Auto-fill enabled</string>
     <string name="switch_subtitle">Fill forms using the active mailbox.</string>
     <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
-    <string name="switch_aggressive_signup">Aggressive sign-up autofill for unlabeled email fields</string>
+    <string name="switch_aggressive_signup">Strict sign-up autofill for smart email-only targeting</string>
     <string name="switch_otp_alerts">Show instant OTP notifications</string>
     <string name="switch_auto_summary">Fill forms using the active mailbox.</string>
     <string name="switch_auto_copy_summary">Copy new codes to the clipboard automatically.</string>
     <string name="switch_otp_alerts_summary">Show a notification when a fresh code arrives.</string>
-    <string name="switch_aggressive_signup_summary">Fill more fields including optional sign-up inputs.</string>
+    <string name="switch_aggressive_signup_summary">Only expands email filling on strong sign-up or create-account screens, including apps and WebViews.</string>
     <string name="button_accessibility">Open accessibility settings</string>
     <string name="button_accessibility_title">Accessibility service</string>
     <string name="button_accessibility_subtitle">Required for auto-fill to work.</string>
@@ -38,8 +38,8 @@
     <string name="button_start_automation">Start automation</string>
     <string name="button_stop_automation">Stop automation</string>
     <string name="button_test">Open test sign-up page</string>
-    <string name="button_test_title">Test WebView</string>
-    <string name="button_test_subtitle">Preview the fill behavior.</string>
+    <string name="button_test_title">Test sign-up page</string>
+    <string name="button_test_subtitle">Open the internal browser demo and verify fill behavior without leaving the app.</string>
     <string name="button_open_short">Open</string>
     <string name="button_enable_symbol">Enable →</string>
     <string name="button_lifetime_default">Mailbox lifetime: 10 min</string>
@@ -56,6 +56,8 @@
     <string name="button_verification_toolkit">Open verification toolkit</string>
     <string name="button_toolkit_short">Toolkit</string>
     <string name="button_configure_provider">Configure provider</string>
+    <string name="button_open_provider_hub">Open provider hub</string>
+    <string name="button_next_provider">Next provider</string>
     <string name="button_share_pack">Share pack</string>
     <string name="button_copy_pack">Copy pack</string>
     <string name="button_apply_best">Apply best message</string>
@@ -156,6 +158,9 @@
     <string name="status_error_prefix">Attention • </string>
     <string name="error_notifications_required">Notification permission is required to keep polling stable. Please enable notifications for the app.</string>
     <string name="webview_title">Test Sign-up</string>
+    <string name="provider_hub_title">Provider Hub</string>
+    <string name="browser_title_default">In-App Browser</string>
+    <string name="browser_title_verification">Verification Browser</string>
     <string name="notification_channel_name">Mailbox monitoring</string>
     <string name="notification_channel_description">Keeps temp email polling stable while monitoring for verification codes.</string>
     <string name="notification_title">TempMail AutoFill is active</string>
@@ -188,7 +193,7 @@
     <string name="accessibility_required_disable">Turn off automation</string>
 
     <string name="provider_dialog_title">Provider settings</string>
-    <string name="provider_dialog_subtitle">Set a provider label and API base URL for the current mailbox source.</string>
+    <string name="provider_dialog_subtitle">Set the API-compatible provider used for automated mailbox polling. Website-based providers stay available in the in-app browser hub.</string>
     <string name="provider_dialog_name_hint">Provider name (optional)</string>
     <string name="provider_dialog_url_hint">Provider API base URL</string>
     <string name="provider_dialog_save">Save</string>
@@ -215,4 +220,7 @@
     <string name="settings_section_system">System</string>
     <string name="settings_provider_name">Name</string>
     <string name="settings_provider_base">Base URL</string>
+    <string name="settings_provider_browser">Browser</string>
+    <string name="settings_provider_presets">Presets</string>
+    <string name="provider_browser_count_format">%1$d providers ready</string>
 </resources>

@@ -12,7 +12,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
-import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 import android.text.TextUtils;
@@ -532,7 +531,11 @@ public class EmailFetcherService extends Service {
     }
 
     private Intent buildOpenLinkIntent(String link) {
-        Intent openLinkIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
+        Intent openLinkIntent = WebViewActivity.createBrowserIntent(
+                this,
+                link,
+                getString(R.string.browser_title_verification)
+        );
         openLinkIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return openLinkIntent;
     }

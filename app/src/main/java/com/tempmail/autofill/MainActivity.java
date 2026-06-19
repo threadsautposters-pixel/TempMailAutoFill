@@ -10,7 +10,6 @@ import android.content.ComponentName;
 import android.content.res.ColorStateList;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -53,6 +52,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView providerValue;
     private TextView providerValueSettings;
     private TextView providerBaseUrl;
+    private TextView browserProviderValue;
+    private TextView browserProviderCountValue;
     private TextView mailboxCountdownValue;
     private TextView lastSyncValue;
     private TextView historyEmpty;
@@ -95,6 +96,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView navSettingsLabel;
     private MaterialButton btnLifetimePreset;
     private MaterialButton btnConfigureProvider;
+    private MaterialButton btnOpenProviderHub;
+    private MaterialButton btnNextBrowserProvider;
     private AlertDialog accessibilityDialog;
     private String currentPage = "dashboard";
     private final Runnable dashboardTicker = new Runnable() {
@@ -156,6 +159,8 @@ public class MainActivity extends AppCompatActivity {
         providerValue = findViewById(R.id.provider_value);
         providerValueSettings = findViewById(R.id.provider_value_settings);
         providerBaseUrl = findViewById(R.id.provider_base_url);
+        browserProviderValue = findViewById(R.id.browser_provider_value);
+        browserProviderCountValue = findViewById(R.id.browser_provider_count_value);
         mailboxCountdownValue = findViewById(R.id.mailbox_countdown_value);
         lastSyncValue = findViewById(R.id.last_sync_value);
         historyEmpty = findViewById(R.id.history_empty);
@@ -177,6 +182,8 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnSetPassword = findViewById(R.id.btn_set_password);
         MaterialButton btnVerificationToolkit = findViewById(R.id.btn_verification_toolkit);
         btnConfigureProvider = findViewById(R.id.btn_configure_provider);
+        btnOpenProviderHub = findViewById(R.id.btn_open_provider_hub);
+        btnNextBrowserProvider = findViewById(R.id.btn_next_provider);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
         switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
         switchAggressiveSignup = findViewById(R.id.switch_aggressive_signup);
@@ -259,7 +266,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnTest.setOnClickListener(v -> {
-            startActivity(new Intent(this, WebViewActivity.class));
+            startActivity(WebViewActivity.createDemoIntent(this));
         });
         btnLifetimePreset.setOnClickListener(v -> {
             int nextLifetime = getNextLifetimeMinutes();
@@ -316,6 +323,12 @@ public class MainActivity extends AppCompatActivity {
         providerValue.setOnClickListener(v -> showProviderDialog());
         if (btnConfigureProvider != null) {
             btnConfigureProvider.setOnClickListener(v -> showProviderDialog());
+        }
+        if (btnOpenProviderHub != null) {
+            btnOpenProviderHub.setOnClickListener(v -> startActivity(WebViewActivity.createProviderHubIntent(this)));
+        }
+        if (btnNextBrowserProvider != null) {
+            btnNextBrowserProvider.setOnClickListener(v -> openNextBrowserProvider());
         }
 
         requestNotificationPermissionIfNeeded();
@@ -445,6 +458,16 @@ public class MainActivity extends AppCompatActivity {
                 providerBaseUrl,
                 prefs.getString("provider_base_url", TempMailApi.DEFAULT_BASE_URL),
                 R.string.provider_base_default
+        );
+        setDashboardValue(
+                browserProviderValue,
+                ProviderPreset.buildBrowserRotationSummary(prefs),
+                R.string.placeholder_provider_short
+        );
+        setDashboardValue(
+                browserProviderCountValue,
+                getString(R.string.provider_browser_count_format, ProviderPreset.getBrowserPresetCount()),
+                R.string.placeholder_provider_short
         );
         updateMailboxCountdownState(enabled, serviceActive, mailboxExpiresAt);
         if (btnLifetimePreset != null) {
@@ -1456,12 +1479,17 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, R.string.toast_open_link_unavailable, Toast.LENGTH_SHORT).show();
             return;
         }
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
-            startActivity(intent);
-        } catch (ActivityNotFoundException exception) {
+        startActivity(WebViewActivity.createBrowserIntent(this, link, getString(R.string.browser_title_verification)));
+    }
+
+    private void openNextBrowserProvider() {
+        ProviderPreset nextPreset = ProviderPreset.getNextBrowserPreset(prefs, true);
+        if (nextPreset == null) {
             Toast.makeText(this, R.string.toast_open_link_failed, Toast.LENGTH_SHORT).show();
+            return;
         }
+        updateDashboard();
+        startActivity(WebViewActivity.createBrowserIntent(this, nextPreset.url, nextPreset.name));
     }
 
     private String formatSavedPasswordSummary(String password) {
