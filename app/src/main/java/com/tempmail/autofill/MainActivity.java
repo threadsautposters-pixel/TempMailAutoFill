@@ -10,7 +10,6 @@ import android.content.ComponentName;
 import android.content.res.ColorStateList;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -53,6 +52,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView providerValue;
     private TextView providerValueSettings;
     private TextView providerBaseUrl;
+    private TextView providerBrowserValue;
     private TextView mailboxCountdownValue;
     private TextView lastSyncValue;
     private TextView historyEmpty;
@@ -95,6 +95,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView navSettingsLabel;
     private MaterialButton btnLifetimePreset;
     private MaterialButton btnConfigureProvider;
+    private MaterialButton btnOpenProviderBrowser;
+    private MaterialButton btnNextProviderBrowser;
     private AlertDialog accessibilityDialog;
     private String currentPage = "dashboard";
     private final Runnable dashboardTicker = new Runnable() {
@@ -156,6 +158,7 @@ public class MainActivity extends AppCompatActivity {
         providerValue = findViewById(R.id.provider_value);
         providerValueSettings = findViewById(R.id.provider_value_settings);
         providerBaseUrl = findViewById(R.id.provider_base_url);
+        providerBrowserValue = findViewById(R.id.provider_browser_value);
         mailboxCountdownValue = findViewById(R.id.mailbox_countdown_value);
         lastSyncValue = findViewById(R.id.last_sync_value);
         historyEmpty = findViewById(R.id.history_empty);
@@ -177,6 +180,8 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnSetPassword = findViewById(R.id.btn_set_password);
         MaterialButton btnVerificationToolkit = findViewById(R.id.btn_verification_toolkit);
         btnConfigureProvider = findViewById(R.id.btn_configure_provider);
+        btnOpenProviderBrowser = findViewById(R.id.btn_open_provider_browser);
+        btnNextProviderBrowser = findViewById(R.id.btn_next_provider_browser);
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
         switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
         switchAggressiveSignup = findViewById(R.id.switch_aggressive_signup);
@@ -259,7 +264,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnTest.setOnClickListener(v -> {
-            startActivity(new Intent(this, WebViewActivity.class));
+            startActivity(WebViewActivity.createDemoIntent(this));
         });
         btnLifetimePreset.setOnClickListener(v -> {
             int nextLifetime = getNextLifetimeMinutes();
@@ -316,6 +321,18 @@ public class MainActivity extends AppCompatActivity {
         providerValue.setOnClickListener(v -> showProviderDialog());
         if (btnConfigureProvider != null) {
             btnConfigureProvider.setOnClickListener(v -> showProviderDialog());
+        }
+        if (providerValueSettings != null) {
+            providerValueSettings.setOnClickListener(v -> showProviderDialog());
+        }
+        if (btnOpenProviderBrowser != null) {
+            btnOpenProviderBrowser.setOnClickListener(v -> openProviderBrowser(false));
+        }
+        if (btnNextProviderBrowser != null) {
+            btnNextProviderBrowser.setOnClickListener(v -> openProviderBrowser(true));
+        }
+        if (providerBrowserValue != null) {
+            providerBrowserValue.setOnClickListener(v -> openProviderBrowser(false));
         }
 
         requestNotificationPermissionIfNeeded();
@@ -446,6 +463,7 @@ public class MainActivity extends AppCompatActivity {
                 prefs.getString("provider_base_url", TempMailApi.DEFAULT_BASE_URL),
                 R.string.provider_base_default
         );
+        setDashboardValue(providerBrowserValue, getSelectedBrowserProviderName(), R.string.placeholder_provider_short);
         updateMailboxCountdownState(enabled, serviceActive, mailboxExpiresAt);
         if (btnLifetimePreset != null) {
             btnLifetimePreset.setText(getLifetimeButtonText(mailboxLifetimeMinutes));
@@ -1447,6 +1465,33 @@ public class MainActivity extends AppCompatActivity {
         return normalized;
     }
 
+    private String getSelectedBrowserProviderName() {
+        if (prefs == null) {
+            return "";
+        }
+        return ProviderCatalog.get(prefs.getInt("browser_provider_index", 0)).name;
+    }
+
+    private void openProviderBrowser(boolean moveToNextProvider) {
+        if (prefs == null) {
+            return;
+        }
+        int currentIndex = prefs.getInt("browser_provider_index", 0);
+        int targetIndex = moveToNextProvider ? currentIndex + 1 : currentIndex;
+        ProviderCatalog.ProviderSite provider = ProviderCatalog.get(targetIndex);
+        prefs.edit().putInt("browser_provider_index", ProviderCatalog.normalizeIndex(targetIndex)).apply();
+        updateDashboard();
+        openInAppBrowser(provider.name, provider.url);
+    }
+
+    private void openInAppBrowser(String title, String url) {
+        if (TextUtils.isEmpty(url)) {
+            Toast.makeText(this, R.string.toast_open_link_unavailable, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startActivity(WebViewActivity.createBrowseIntent(this, title, url));
+    }
+
     private void openLatestLink() {
         openLink(prefs.getString("latest_link", ""));
     }
@@ -1456,12 +1501,7 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, R.string.toast_open_link_unavailable, Toast.LENGTH_SHORT).show();
             return;
         }
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(link));
-            startActivity(intent);
-        } catch (ActivityNotFoundException exception) {
-            Toast.makeText(this, R.string.toast_open_link_failed, Toast.LENGTH_SHORT).show();
-        }
+        openInAppBrowser(getString(R.string.browser_title_verification), link);
     }
 
     private String formatSavedPasswordSummary(String password) {

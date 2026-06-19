@@ -24,12 +24,12 @@
     <string name="switch_title">Auto-fill enabled</string>
     <string name="switch_subtitle">Fill forms using the active mailbox.</string>
     <string name="switch_auto_copy">Auto-copy fresh verification codes</string>
-    <string name="switch_aggressive_signup">Aggressive sign-up autofill for unlabeled email fields</string>
+    <string name="switch_aggressive_signup">Smart aggressive sign-up autofill</string>
     <string name="switch_otp_alerts">Show instant OTP notifications</string>
     <string name="switch_auto_summary">Fill forms using the active mailbox.</string>
     <string name="switch_auto_copy_summary">Copy new codes to the clipboard automatically.</string>
     <string name="switch_otp_alerts_summary">Show a notification when a fresh code arrives.</string>
-    <string name="switch_aggressive_signup_summary">Fill more fields including optional sign-up inputs.</string>
+    <string name="switch_aggressive_signup_summary">Only expands email autofill on strong sign-up or create-account screens and avoids generic editable fields.</string>
     <string name="button_accessibility">Open accessibility settings</string>
     <string name="button_accessibility_title">Accessibility service</string>
     <string name="button_accessibility_subtitle">Required for auto-fill to work.</string>
@@ -55,7 +55,9 @@
     <string name="button_set_password">Set saved password</string>
     <string name="button_verification_toolkit">Open verification toolkit</string>
     <string name="button_toolkit_short">Toolkit</string>
-    <string name="button_configure_provider">Configure provider</string>
+    <string name="button_configure_provider">Configure API</string>
+    <string name="button_open_provider_browser">Open provider</string>
+    <string name="button_next_provider_browser">Next provider</string>
     <string name="button_share_pack">Share pack</string>
     <string name="button_copy_pack">Copy pack</string>
     <string name="button_apply_best">Apply best message</string>
@@ -188,7 +190,7 @@
     <string name="accessibility_required_disable">Turn off automation</string>
 
     <string name="provider_dialog_title">Provider settings</string>
-    <string name="provider_dialog_subtitle">Set a provider label and API base URL for the current mailbox source.</string>
+    <string name="provider_dialog_subtitle">Set the automation provider label and API base URL. Website providers are available below in the built-in browser rotation.</string>
     <string name="provider_dialog_name_hint">Provider name (optional)</string>
     <string name="provider_dialog_url_hint">Provider API base URL</string>
     <string name="provider_dialog_save">Save</string>
@@ -215,4 +217,7 @@
     <string name="settings_section_system">System</string>
     <string name="settings_provider_name">Name</string>
     <string name="settings_provider_base">Base URL</string>
+    <string name="settings_provider_browser">Browser provider</string>
+    <string name="provider_browser_summary">Cycle through the listed temp-mail sites inside the app without leaving your workflow.</string>
+    <string name="browser_title_verification">Verification Link</string>
 </resources>

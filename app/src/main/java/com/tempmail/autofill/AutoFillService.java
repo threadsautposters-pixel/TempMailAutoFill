@@ -24,7 +24,8 @@ public class AutoFillService extends AccessibilityService {
     private static final int EMAIL_SCORE_THRESHOLD = 120;
     private static final int CODE_SCORE_THRESHOLD = 140;
     private static final int PASSWORD_SCORE_THRESHOLD = 150;
-    private static final int AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD = 85;
+    private static final int AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD = 100;
+    private static final int STRONG_SIGNUP_CONTEXT_THRESHOLD = 120;
     private static final int EMAIL_NEAR_BEST_DELTA = 25;
     private static final int PASSWORD_NEAR_BEST_DELTA = 20;
     private static final long DEFERRED_SCAN_DELAY_MS = 180L;
@@ -508,7 +509,15 @@ public class AutoFillService extends AccessibilityService {
             String password,
             boolean aggressiveSignupAutofill
     ) {
-        if (tryFillFocusedNode(focusedNode, windowSignature, email, code, password, aggressiveSignupAutofill)) {
+        if (tryFillFocusedNode(
+                focusedNode,
+                fields,
+                windowSignature,
+                email,
+                code,
+                password,
+                aggressiveSignupAutofill
+        )) {
             return true;
         }
 
@@ -526,6 +535,7 @@ public class AutoFillService extends AccessibilityService {
 
     private boolean tryFillFocusedNode(
             AccessibilityNodeInfo focusedNode,
+            List<AccessibilityNodeInfo> fields,
             String windowSignature,
             String email,
             String code,
@@ -554,7 +564,7 @@ public class AutoFillService extends AccessibilityService {
                 && emailScore >= AGGRESSIVE_SIGNUP_EMAIL_THRESHOLD
                 && emailScore >= codeScore
                 && emailScore >= passwordScore
-                && isLikelySignupTextField(focusedNode, nodeContext, windowSignature)
+                && isAggressiveSignupEmailCandidate(focusedNode, nodeContext, windowSignature, fields)
                 && fillNode(focusedNode, email)) {
             return true;
         }
@@ -667,17 +677,14 @@ public class AutoFillService extends AccessibilityService {
             int threshold
     ) {
         Candidate best = null;
-        boolean signupContext = isSignupContext(windowSignature);
         for (AccessibilityNodeInfo node : fields) {
             String nodeContext = buildNodeContext(node);
             int score = scoreEmailCandidate(node, nodeContext, windowSignature, false);
             if (score < threshold) {
                 continue;
             }
-            if (score < EMAIL_SCORE_THRESHOLD && !signupContext) {
-                continue;
-            }
-            if (score < EMAIL_SCORE_THRESHOLD && !isLikelySignupTextField(node, nodeContext, windowSignature)) {
+            if (score < EMAIL_SCORE_THRESHOLD
+                    && !isAggressiveSignupEmailCandidate(node, nodeContext, windowSignature, fields)) {
                 continue;
             }
             Candidate candidate = new Candidate(node, score, nodeContext);
@@ -981,6 +988,111 @@ public class AutoFillService extends AccessibilityService {
             return false;
         }
         return true;
+    }
+
+    private boolean isAggressiveSignupEmailCandidate(
+            AccessibilityNodeInfo node,
+            String nodeContext,
+            String windowSignature,
+            List<AccessibilityNodeInfo> fields
+    ) {
+        if (node == null || !canAcceptText(node) || !isStrongSignupContext(windowSignature)) {
+            return false;
+        }
+        if (isExplicitEmailCandidate(node, nodeContext)) {
+            return true;
+        }
+        if (!isLikelySignupTextField(node, nodeContext, windowSignature)) {
+            return false;
+        }
+        if (containsAny(
+                nodeContext,
+                "username",
+                "user name",
+                "login",
+                "handle",
+                "display name",
+                "nickname",
+                "first name",
+                "last name",
+                "full name",
+                "referral",
+                "promo",
+                "coupon",
+                "message",
+                "comment"
+        )) {
+            return false;
+        }
+
+        int eligibleFieldCount = countAggressiveEmailEligibleFields(fields, windowSignature);
+        boolean screenHasExplicitEmailCue = containsAny(
+                windowSignature,
+                "email",
+                "e-mail",
+                "mail",
+                "continue with email",
+                "email address"
+        );
+        boolean screenHasPasswordField = hasPasswordField(fields, windowSignature);
+        if (screenHasExplicitEmailCue) {
+            return eligibleFieldCount <= 2;
+        }
+        return screenHasPasswordField && eligibleFieldCount == 1;
+    }
+
+    private boolean isStrongSignupContext(String signature) {
+        return scoreSignupContext(signature) >= STRONG_SIGNUP_CONTEXT_THRESHOLD;
+    }
+
+    private int countAggressiveEmailEligibleFields(
+            List<AccessibilityNodeInfo> fields,
+            String windowSignature
+    ) {
+        int count = 0;
+        for (AccessibilityNodeInfo field : fields) {
+            if (field == null || !canAcceptText(field) || !getNodeValue(field).isEmpty()) {
+                continue;
+            }
+            if (isNumericInputType(field.getInputType())
+                    || isPasswordInputType(field.getInputType())
+                    || isMultiLineInputType(field.getInputType())) {
+                continue;
+            }
+            String context = buildNodeContext(field);
+            if (!isLikelySignupTextField(field, context, windowSignature)) {
+                continue;
+            }
+            if (containsAny(
+                    context,
+                    "username",
+                    "user name",
+                    "login",
+                    "handle",
+                    "first name",
+                    "last name",
+                    "full name",
+                    "display name",
+                    "nickname"
+            )) {
+                continue;
+            }
+            count++;
+        }
+        return count;
+    }
+
+    private boolean hasPasswordField(List<AccessibilityNodeInfo> fields, String windowSignature) {
+        for (AccessibilityNodeInfo field : fields) {
+            if (field == null) {
+                continue;
+            }
+            String context = buildNodeContext(field);
+            if (scorePasswordCandidate(field, context, windowSignature, false) >= PASSWORD_SCORE_THRESHOLD) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isEmailInputType(int inputType) {

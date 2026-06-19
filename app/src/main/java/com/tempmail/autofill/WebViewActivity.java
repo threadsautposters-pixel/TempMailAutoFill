@@ -1,30 +1,132 @@
 package com.tempmail.autofill;
 
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
+import android.text.TextUtils;
+import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 public class WebViewActivity extends AppCompatActivity {
+    public static final String EXTRA_URL = "extra_url";
+    public static final String EXTRA_TITLE = "extra_title";
+
+    private WebView webView;
+    private ProgressBar progressBar;
+
+    public static Intent createDemoIntent(Context context) {
+        return new Intent(context, WebViewActivity.class);
+    }
+
+    public static Intent createBrowseIntent(Context context, String title, String url) {
+        Intent intent = new Intent(context, WebViewActivity.class);
+        intent.putExtra(EXTRA_TITLE, title);
+        intent.putExtra(EXTRA_URL, url);
+        return intent;
+    }
+
     @Override
+    @SuppressLint("SetJavaScriptEnabled")
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        WebView webView = new WebView(this);
-        webView.setWebViewClient(new WebViewClient());
+        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+        progressBar.setMax(100);
+
+        webView = new WebView(this);
+        webView.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                1f
+        ));
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
-        setTitle(R.string.webview_title);
+        webView.getSettings().setLoadWithOverviewMode(true);
+        webView.getSettings().setUseWideViewPort(true);
+        webView.getSettings().setBuiltInZoomControls(false);
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public void onProgressChanged(WebView view, int newProgress) {
+                progressBar.setProgress(newProgress);
+                progressBar.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
+                CharSequence pageTitle = view.getTitle();
+                if (!TextUtils.isEmpty(pageTitle)) {
+                    setTitle(pageTitle);
+                }
+            }
+        });
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request == null || request.getUrl() == null) {
+                    return false;
+                }
+                view.loadUrl(request.getUrl().toString());
+                return true;
+            }
+        });
 
-        webView.loadDataWithBaseURL(
-                "https://local.tempmail.autofill/",
-                buildDemoPage(),
-                "text/html",
-                "UTF-8",
-                null
-        );
-        setContentView(webView);
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.addView(progressBar);
+        layout.addView(webView);
+        setContentView(layout);
+
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
+
+        String requestedTitle = getIntent().getStringExtra(EXTRA_TITLE);
+        String url = getIntent().getStringExtra(EXTRA_URL);
+        setTitle(TextUtils.isEmpty(requestedTitle) ? getString(R.string.webview_title) : requestedTitle);
+
+        if (TextUtils.isEmpty(url)) {
+            webView.loadDataWithBaseURL(
+                    "https://local.tempmail.autofill/",
+                    buildDemoPage(),
+                    "text/html",
+                    "UTF-8",
+                    null
+            );
+        } else {
+            webView.loadUrl(url);
+        }
+    }
+
+    @Override
+    public boolean onSupportNavigateUp() {
+        onBackPressed();
+        return true;
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (webView != null) {
+            webView.destroy();
+        }
+        super.onDestroy();
     }
 
     private String buildDemoPage() {
