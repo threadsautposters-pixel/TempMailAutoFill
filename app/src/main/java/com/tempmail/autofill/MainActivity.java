@@ -54,6 +54,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView providerBaseUrl;
     private TextView browserProviderValue;
     private TextView browserProviderCountValue;
+    private TextView heroProviderValue;
+    private TextView heroProviderMeta;
     private TextView mailboxCountdownValue;
     private TextView lastSyncValue;
     private TextView historyEmpty;
@@ -161,6 +163,8 @@ public class MainActivity extends AppCompatActivity {
         providerBaseUrl = findViewById(R.id.provider_base_url);
         browserProviderValue = findViewById(R.id.browser_provider_value);
         browserProviderCountValue = findViewById(R.id.browser_provider_count_value);
+        heroProviderValue = findViewById(R.id.hero_provider_value);
+        heroProviderMeta = findViewById(R.id.hero_provider_meta);
         mailboxCountdownValue = findViewById(R.id.mailbox_countdown_value);
         lastSyncValue = findViewById(R.id.last_sync_value);
         historyEmpty = findViewById(R.id.history_empty);
@@ -172,6 +176,9 @@ public class MainActivity extends AppCompatActivity {
         MaterialButton btnService = findViewById(R.id.btn_start_service);
         MaterialButton btnRefresh = findViewById(R.id.btn_refresh);
         MaterialButton btnTest = findViewById(R.id.btn_test_webview);
+        MaterialButton btnHeroRefresh = findViewById(R.id.btn_hero_refresh);
+        MaterialButton btnHeroProviderHub = findViewById(R.id.btn_hero_provider_hub);
+        MaterialButton btnHeroTest = findViewById(R.id.btn_hero_test);
         MaterialButton btnCopyEmail = findViewById(R.id.btn_copy_email);
         MaterialButton btnCopyCode = findViewById(R.id.btn_copy_code);
         MaterialButton btnCopyLink = findViewById(R.id.btn_copy_link);
@@ -264,10 +271,16 @@ public class MainActivity extends AppCompatActivity {
             updateDashboard();
             Toast.makeText(this, R.string.toast_refresh_started, Toast.LENGTH_SHORT).show();
         });
+        if (btnHeroRefresh != null) {
+            btnHeroRefresh.setOnClickListener(v -> btnRefresh.performClick());
+        }
 
         btnTest.setOnClickListener(v -> {
             startActivity(WebViewActivity.createDemoIntent(this));
         });
+        if (btnHeroTest != null) {
+            btnHeroTest.setOnClickListener(v -> btnTest.performClick());
+        }
         btnLifetimePreset.setOnClickListener(v -> {
             int nextLifetime = getNextLifetimeMinutes();
             prefs.edit().putInt("mailbox_lifetime_minutes", nextLifetime).apply();
@@ -326,6 +339,9 @@ public class MainActivity extends AppCompatActivity {
         }
         if (btnOpenProviderHub != null) {
             btnOpenProviderHub.setOnClickListener(v -> startActivity(WebViewActivity.createProviderHubIntent(this)));
+        }
+        if (btnHeroProviderHub != null) {
+            btnHeroProviderHub.setOnClickListener(v -> startActivity(WebViewActivity.createProviderHubIntent(this)));
         }
         if (btnNextBrowserProvider != null) {
             btnNextBrowserProvider.setOnClickListener(v -> openNextBrowserProvider());
@@ -465,7 +481,17 @@ public class MainActivity extends AppCompatActivity {
                 R.string.placeholder_provider_short
         );
         setDashboardValue(
+                heroProviderValue,
+                ProviderPreset.buildBrowserRotationSummary(prefs),
+                R.string.placeholder_provider_short
+        );
+        setDashboardValue(
                 browserProviderCountValue,
+                getString(R.string.provider_browser_count_format, ProviderPreset.getBrowserPresetCount()),
+                R.string.placeholder_provider_short
+        );
+        setDashboardValue(
+                heroProviderMeta,
                 getString(R.string.provider_browser_count_format, ProviderPreset.getBrowserPresetCount()),
                 R.string.placeholder_provider_short
         );

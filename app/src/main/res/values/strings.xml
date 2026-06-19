@@ -5,6 +5,9 @@
     <string name="dashboard_title">AutoFill Automation</string>
     <string name="dashboard_subtitle">Dark verification workspace for mailbox state, OTP capture, and sign-up flow support.</string>
     <string name="dashboard_hint">Use the latest mailbox, code, and link from one control surface.</string>
+    <string name="hero_provider_title">Provider rotation</string>
+    <string name="hero_browser_title">Internal browser</string>
+    <string name="hero_browser_summary">Verification links, provider pages, and the test flow stay inside the app.</string>
     <string name="section_home">Home</string>
     <string name="section_automation">Automation</string>
     <string name="section_history">History</string>
@@ -35,12 +38,15 @@
     <string name="button_accessibility_subtitle">Required for auto-fill to work.</string>
     <string name="button_refresh">Refresh mailbox</string>
     <string name="button_refresh_symbol">↻ Refresh</string>
+    <string name="button_refresh_short">Refresh</string>
     <string name="button_start_automation">Start automation</string>
     <string name="button_stop_automation">Stop automation</string>
     <string name="button_test">Open test sign-up page</string>
     <string name="button_test_title">Test sign-up page</string>
     <string name="button_test_subtitle">Open the internal browser demo and verify fill behavior without leaving the app.</string>
+    <string name="button_test_short">Test page</string>
     <string name="button_open_short">Open</string>
+    <string name="button_open_hub_short">Provider hub</string>
     <string name="button_enable_symbol">Enable →</string>
     <string name="button_lifetime_default">Mailbox lifetime: 10 min</string>
     <string name="button_lifetime_format">Mailbox lifetime: %1$d min</string>
@@ -78,7 +84,9 @@
     <string name="card_mailbox_title">Mailbox</string>
     <string name="card_mailbox_subtitle">Current mailbox state.</string>
     <string name="card_verification_title">Verification</string>
+    <string name="card_verification_subtitle">Keep the newest code and verification link ready for one-tap use.</string>
     <string name="card_credentials_title">Credentials</string>
+    <string name="card_credentials_subtitle">Store one reusable password for signup flows that ask for password creation.</string>
     <string name="card_automation_title">Automation Actions</string>
     <string name="card_automation_subtitle">Launch the helper, test flows, tune alerts, and keep autofill behavior aligned with your setup.</string>
     <string name="label_email_short">Email</string>
