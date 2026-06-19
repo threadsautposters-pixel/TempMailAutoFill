@@ -191,11 +191,15 @@
 
     <string name="provider_dialog_title">Provider settings</string>
     <string name="provider_dialog_subtitle">Set the automation provider label and API base URL. Website providers are available below in the built-in browser rotation.</string>
+    <string name="provider_dialog_api_section">Automation API</string>
+    <string name="provider_dialog_browser_section">Built-in browser providers</string>
+    <string name="provider_dialog_browser_subtitle">Choose the temp-mail site that opens inside the app when you browse providers or verification links.</string>
     <string name="provider_dialog_name_hint">Provider name (optional)</string>
     <string name="provider_dialog_url_hint">Provider API base URL</string>
     <string name="provider_dialog_save">Save</string>
+    <string name="provider_dialog_default_api">Use Mail.tm default</string>
     <string name="provider_dialog_cancel">Cancel</string>
-    <string name="provider_base_default">https://api.mail.gd</string>
+    <string name="provider_base_default">https://api.mail.tm</string>
     <string name="password_dialog_title">Saved password</string>
     <string name="password_dialog_subtitle">Save one reusable password for password and confirm-password fields.</string>
     <string name="password_dialog_hint">Password to autofill in password and confirm-password fields</string>

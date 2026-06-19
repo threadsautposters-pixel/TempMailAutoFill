@@ -22,6 +22,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -1337,12 +1340,15 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        ScrollView scrollView = new ScrollView(this);
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int padding = dpToPx(20);
         layout.setPadding(padding, padding, padding, padding);
+        scrollView.addView(layout);
 
         TextView subtitle = createDialogDescription(R.string.provider_dialog_subtitle);
+        TextView apiSectionTitle = createDialogSectionTitle(R.string.provider_dialog_api_section);
 
         EditText nameInput = new EditText(this);
         nameInput.setHint(R.string.provider_dialog_name_hint);
@@ -1357,19 +1363,57 @@ public class MainActivity extends AppCompatActivity {
         urlInput.setText(prefs.getString("provider_base_url", TempMailApi.DEFAULT_BASE_URL));
         applyTopMargin(urlInput, 12);
 
+        TextView browserSectionTitle = createDialogSectionTitle(R.string.provider_dialog_browser_section);
+        TextView browserSubtitle = createDialogDescription(R.string.provider_dialog_browser_subtitle);
+        applyTopMargin(browserSectionTitle, 20);
+        applyTopMargin(browserSubtitle, 8);
+
+        RadioGroup browserGroup = new RadioGroup(this);
+        browserGroup.setOrientation(LinearLayout.VERTICAL);
+        applyTopMargin(browserGroup, 12);
+        int selectedBrowserIndex = ProviderCatalog.normalizeIndex(prefs.getInt("browser_provider_index", 0));
+        for (int i = 0; i < ProviderCatalog.size(); i++) {
+            ProviderCatalog.ProviderSite provider = ProviderCatalog.get(i);
+            RadioButton option = new RadioButton(this);
+            option.setId(View.generateViewId());
+            option.setTag(i);
+            option.setText(provider.name + "\n" + provider.url);
+            option.setTextColor(ContextCompat.getColor(this, R.color.color_text_primary));
+            option.setTextSize(13f);
+            option.setPadding(0, dpToPx(4), 0, dpToPx(4));
+            browserGroup.addView(option);
+            if (i == selectedBrowserIndex) {
+                browserGroup.check(option.getId());
+            }
+        }
+
         layout.addView(subtitle);
+        layout.addView(apiSectionTitle);
         layout.addView(nameInput);
         layout.addView(urlInput);
+        layout.addView(browserSectionTitle);
+        layout.addView(browserSubtitle);
+        layout.addView(browserGroup);
 
         new AlertDialog.Builder(this)
                 .setTitle(R.string.provider_dialog_title)
-                .setView(layout)
+                .setView(scrollView)
                 .setPositiveButton(R.string.provider_dialog_save, (dialog, which) -> {
                     String providerName = nameInput.getText() == null ? "" : nameInput.getText().toString().trim();
                     String baseUrl = urlInput.getText() == null ? "" : urlInput.getText().toString().trim();
+                    int checkedBrowserId = browserGroup.getCheckedRadioButtonId();
+                    int browserProviderIndex = selectedBrowserIndex;
+                    if (checkedBrowserId != View.NO_ID) {
+                        View checkedView = browserGroup.findViewById(checkedBrowserId);
+                        Object tag = checkedView == null ? null : checkedView.getTag();
+                        if (tag instanceof Integer) {
+                            browserProviderIndex = ProviderCatalog.normalizeIndex((Integer) tag);
+                        }
+                    }
 
                     SharedPreferences.Editor editor = prefs.edit()
                             .putBoolean("pending_force_refresh", true)
+                            .putInt("browser_provider_index", browserProviderIndex)
                             .remove("latest_code")
                             .remove("latest_link")
                             .remove("last_auto_copied_code")
@@ -1388,6 +1432,22 @@ public class MainActivity extends AppCompatActivity {
                     }
 
                     editor.apply();
+                    if (prefs.getBoolean("enabled", false)) {
+                        startEmailFetcher(true);
+                    }
+                    updateDashboard();
+                    Toast.makeText(this, R.string.toast_provider_updated, Toast.LENGTH_SHORT).show();
+                })
+                .setNeutralButton(R.string.provider_dialog_default_api, (dialog, which) -> {
+                    prefs.edit()
+                            .putString("provider_name", TempMailApi.DEFAULT_PROVIDER_NAME)
+                            .putString("provider_base_url", TempMailApi.DEFAULT_BASE_URL)
+                            .putBoolean("pending_force_refresh", true)
+                            .remove("latest_code")
+                            .remove("latest_link")
+                            .remove("last_auto_copied_code")
+                            .remove("last_notified_link")
+                            .apply();
                     if (prefs.getBoolean("enabled", false)) {
                         startEmailFetcher(true);
                     }
@@ -1445,6 +1505,15 @@ public class MainActivity extends AppCompatActivity {
         textView.setTextColor(ContextCompat.getColor(this, R.color.color_text_secondary));
         textView.setTextSize(14);
         textView.setLineSpacing(0f, 1.1f);
+        return textView;
+    }
+
+    private TextView createDialogSectionTitle(int textRes) {
+        TextView textView = new TextView(this);
+        textView.setText(textRes);
+        textView.setTextColor(ContextCompat.getColor(this, R.color.color_text_primary));
+        textView.setTextSize(13);
+        textView.setTypeface(Typeface.DEFAULT_BOLD);
         return textView;
     }
 
