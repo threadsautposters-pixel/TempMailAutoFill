@@ -8,8 +8,8 @@ android {
         applicationId "com.tempmail.autofill"
         minSdk 24
         targetSdk 34
-        versionCode 22
-        versionName "2.5.5"
+        versionCode 23
+        versionName "2.5.6"
         vectorDrawables.useSupportLibrary = true
     }
     buildTypes {

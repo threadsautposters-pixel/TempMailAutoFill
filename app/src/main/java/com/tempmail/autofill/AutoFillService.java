@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.accessibility.AccessibilityEvent;
@@ -29,9 +30,15 @@ public class AutoFillService extends AccessibilityService {
     private static final int EMAIL_NEAR_BEST_DELTA = 25;
     private static final int PASSWORD_NEAR_BEST_DELTA = 20;
     private static final long DEFERRED_SCAN_DELAY_MS = 180L;
+    private static final long CODE_RETRY_DELAY_MS = 1200L;
+    private static final int CODE_RETRY_MAX_ATTEMPTS = 3;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable deferredScanRunnable = () -> attemptAutoFill(null);
+    private final Runnable codeRetryRunnable = () -> attemptAutoFill(null);
+    private String lastCodeAttemptKey;
+    private int lastCodeAttemptCount;
+    private long nextCodeRetryAtMs;
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
@@ -62,7 +69,10 @@ public class AutoFillService extends AccessibilityService {
     }
 
     @Override
-    public void onInterrupt() {}
+    public void onInterrupt() {
+        handler.removeCallbacks(deferredScanRunnable);
+        clearCodeFillRetryState();
+    }
 
     private void scheduleDeferredScan() {
         handler.removeCallbacks(deferredScanRunnable);
@@ -84,13 +94,18 @@ public class AutoFillService extends AccessibilityService {
         String code = prefs.getString("latest_code", null);
         String password = prefs.getString("saved_password", null);
         boolean aggressiveSignupAutofill = prefs.getBoolean("aggressive_signup_autofill", false);
+        boolean retryFailedCodeFill = prefs.getBoolean("retry_failed_code_fill", false);
         String windowSignature = buildWindowSignature(root);
+
+        if (TextUtils.isEmpty(code)) {
+            clearCodeFillRetryState();
+        }
 
         List<AccessibilityNodeInfo> fields = new ArrayList<>();
         collectEditableNodes(root, fields);
 
         AccessibilityNodeInfo focusedNode = findBestTargetNode(root, source);
-        if (tryFillSegmentedCodeFields(fields, focusedNode, code)) {
+        if (tryFillSegmentedCodeFields(fields, focusedNode, code, windowSignature, retryFailedCodeFill)) {
             return;
         }
 
@@ -101,7 +116,8 @@ public class AutoFillService extends AccessibilityService {
                 email,
                 code,
                 password,
-                aggressiveSignupAutofill
+                aggressiveSignupAutofill,
+                retryFailedCodeFill
         );
     }
 
@@ -444,7 +460,9 @@ public class AutoFillService extends AccessibilityService {
     private boolean tryFillSegmentedCodeFields(
             List<AccessibilityNodeInfo> fields,
             AccessibilityNodeInfo focusedNode,
-            String code
+            String code,
+            String windowSignature,
+            boolean retryFailedCodeFill
     ) {
         if (TextUtils.isEmpty(code)) {
             return false;
@@ -475,13 +493,23 @@ public class AutoFillService extends AccessibilityService {
         }
 
         if (normalizedCode.length() == labeledCodeFields.size()) {
-            return fillSegmentedFields(labeledCodeFields, normalizedCode);
+            return handleSegmentedCodeFill(
+                    labeledCodeFields,
+                    normalizedCode,
+                    windowSignature,
+                    retryFailedCodeFill
+            );
         }
 
         String focusedSignature = buildNodeContext(focusedNode);
         boolean focusedLooksLikeCode = !focusedSignature.isEmpty() && shouldFillCode(focusedSignature);
         if (focusedLooksLikeCode && normalizedCode.length() == compactEditableFields.size()) {
-            return fillSegmentedFields(compactEditableFields, normalizedCode);
+            return handleSegmentedCodeFill(
+                    compactEditableFields,
+                    normalizedCode,
+                    windowSignature,
+                    retryFailedCodeFill
+            );
         }
 
         return false;
@@ -500,6 +528,41 @@ public class AutoFillService extends AccessibilityService {
         return filledAny;
     }
 
+    private boolean handleSegmentedCodeFill(
+            List<AccessibilityNodeInfo> fields,
+            String code,
+            String windowSignature,
+            boolean retryFailedCodeFill
+    ) {
+        if (areSegmentedFieldsFilled(fields, code)) {
+            clearCodeFillRetryState();
+            return true;
+        }
+
+        String attemptKey = buildSegmentedCodeAttemptKey(fields, windowSignature, code);
+        if (!shouldAttemptCodeFill(attemptKey, retryFailedCodeFill)) {
+            return true;
+        }
+
+        fillSegmentedFields(fields, code);
+        boolean verified = areSegmentedFieldsFilled(fields, code);
+        recordCodeFillAttempt(attemptKey, retryFailedCodeFill, verified);
+        return true;
+    }
+
+    private boolean areSegmentedFieldsFilled(List<AccessibilityNodeInfo> fields, String code) {
+        if (fields == null || code == null || fields.size() != code.length()) {
+            return false;
+        }
+        for (int i = 0; i < fields.size(); i++) {
+            AccessibilityNodeInfo node = fields.get(i);
+            if (!String.valueOf(code.charAt(i)).equals(getNodeValue(node))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private boolean tryFillBestCandidate(
             AccessibilityNodeInfo focusedNode,
             List<AccessibilityNodeInfo> fields,
@@ -507,7 +570,8 @@ public class AutoFillService extends AccessibilityService {
             String email,
             String code,
             String password,
-            boolean aggressiveSignupAutofill
+            boolean aggressiveSignupAutofill,
+            boolean retryFailedCodeFill
     ) {
         if (tryFillFocusedNode(
                 focusedNode,
@@ -516,7 +580,8 @@ public class AutoFillService extends AccessibilityService {
                 email,
                 code,
                 password,
-                aggressiveSignupAutofill
+                aggressiveSignupAutofill,
+                retryFailedCodeFill
         )) {
             return true;
         }
@@ -530,7 +595,8 @@ public class AutoFillService extends AccessibilityService {
         }
 
         Candidate bestCodeCandidate = findBestCodeCandidate(fields, windowSignature);
-        return bestCodeCandidate != null && fillNode(bestCodeCandidate.node, code);
+        return bestCodeCandidate != null
+                && handleCodeFill(bestCodeCandidate.node, code, windowSignature, retryFailedCodeFill);
     }
 
     private boolean tryFillFocusedNode(
@@ -540,7 +606,8 @@ public class AutoFillService extends AccessibilityService {
             String email,
             String code,
             String password,
-            boolean aggressiveSignupAutofill
+            boolean aggressiveSignupAutofill,
+            boolean retryFailedCodeFill
     ) {
         if (!canAcceptText(focusedNode)) {
             return false;
@@ -578,7 +645,7 @@ public class AutoFillService extends AccessibilityService {
 
         return !TextUtils.isEmpty(code)
                 && codeScore >= CODE_SCORE_THRESHOLD
-                && fillNode(focusedNode, code);
+                && handleCodeFill(focusedNode, code, windowSignature, retryFailedCodeFill);
     }
 
     private boolean fillLikelyEmailCandidates(
@@ -1146,6 +1213,115 @@ public class AutoFillService extends AccessibilityService {
         }
 
         return pasteNodeValue(node, value);
+    }
+
+    private boolean handleCodeFill(
+            AccessibilityNodeInfo node,
+            String code,
+            String windowSignature,
+            boolean retryFailedCodeFill
+    ) {
+        if (!canAcceptText(node) || TextUtils.isEmpty(code)) {
+            return false;
+        }
+        if (code.equals(getNodeValue(node))) {
+            clearCodeFillRetryState();
+            return true;
+        }
+
+        String attemptKey = buildCodeAttemptKey(node, windowSignature, code);
+        if (!shouldAttemptCodeFill(attemptKey, retryFailedCodeFill)) {
+            return true;
+        }
+
+        fillNode(node, code);
+        boolean verified = code.equals(getNodeValue(node));
+        recordCodeFillAttempt(attemptKey, retryFailedCodeFill, verified);
+        return true;
+    }
+
+    private boolean shouldAttemptCodeFill(String attemptKey, boolean retryFailedCodeFill) {
+        if (TextUtils.isEmpty(attemptKey)) {
+            return false;
+        }
+        if (!TextUtils.equals(lastCodeAttemptKey, attemptKey)) {
+            handler.removeCallbacks(codeRetryRunnable);
+            lastCodeAttemptKey = attemptKey;
+            lastCodeAttemptCount = 0;
+            nextCodeRetryAtMs = 0L;
+            return true;
+        }
+        if (!retryFailedCodeFill) {
+            return lastCodeAttemptCount == 0;
+        }
+        if (lastCodeAttemptCount >= CODE_RETRY_MAX_ATTEMPTS) {
+            return false;
+        }
+        return SystemClock.uptimeMillis() >= nextCodeRetryAtMs;
+    }
+
+    private void recordCodeFillAttempt(String attemptKey, boolean retryFailedCodeFill, boolean verified) {
+        if (!TextUtils.equals(lastCodeAttemptKey, attemptKey)) {
+            lastCodeAttemptKey = attemptKey;
+            lastCodeAttemptCount = 0;
+        }
+
+        lastCodeAttemptCount++;
+        handler.removeCallbacks(codeRetryRunnable);
+        if (verified) {
+            clearCodeFillRetryState();
+            return;
+        }
+        if (!retryFailedCodeFill || lastCodeAttemptCount >= CODE_RETRY_MAX_ATTEMPTS) {
+            nextCodeRetryAtMs = Long.MAX_VALUE;
+            return;
+        }
+
+        nextCodeRetryAtMs = SystemClock.uptimeMillis() + CODE_RETRY_DELAY_MS;
+        handler.postDelayed(codeRetryRunnable, CODE_RETRY_DELAY_MS);
+    }
+
+    private void clearCodeFillRetryState() {
+        handler.removeCallbacks(codeRetryRunnable);
+        lastCodeAttemptKey = null;
+        lastCodeAttemptCount = 0;
+        nextCodeRetryAtMs = 0L;
+    }
+
+    private String buildCodeAttemptKey(AccessibilityNodeInfo node, String windowSignature, String code) {
+        return windowSignature + "|code|" + code + "|" + buildStableNodeSignature(node);
+    }
+
+    private String buildSegmentedCodeAttemptKey(
+            List<AccessibilityNodeInfo> fields,
+            String windowSignature,
+            String code
+    ) {
+        StringBuilder builder = new StringBuilder(windowSignature)
+                .append("|segmented-code|")
+                .append(code);
+        for (AccessibilityNodeInfo node : fields) {
+            builder.append('|').append(buildStableNodeSignature(node));
+        }
+        return builder.toString();
+    }
+
+    private String buildStableNodeSignature(AccessibilityNodeInfo node) {
+        if (node == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        appendIfPresent(builder, node.getViewIdResourceName());
+        appendIfPresent(builder, node.getContentDescription());
+        appendIfPresent(builder, node.getPackageName());
+        appendIfPresent(builder, node.getClassName());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            appendIfPresent(builder, node.getPaneTitle());
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            appendIfPresent(builder, node.getHintText());
+        }
+        return builder.toString().toLowerCase(Locale.US);
     }
 
     private boolean pasteNodeValue(AccessibilityNodeInfo node, String value) {

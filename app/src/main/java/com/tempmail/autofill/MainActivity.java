@@ -42,6 +42,7 @@ import java.util.Locale;
 public class MainActivity extends AppCompatActivity {
     private SwitchMaterial switchAutoFill;
     private SwitchMaterial switchAggressiveSignup;
+    private SwitchMaterial switchRetryFailedCodeFill;
     private TextView statusText;
     private TextView statusBadge;
     private TextView titleStateBadge;
@@ -188,12 +189,14 @@ public class MainActivity extends AppCompatActivity {
         switchAutoCopy = findViewById(R.id.switch_auto_copy);
         switchOtpAlerts = findViewById(R.id.switch_otp_alerts);
         switchAggressiveSignup = findViewById(R.id.switch_aggressive_signup);
+        switchRetryFailedCodeFill = findViewById(R.id.switch_retry_failed_code_fill);
 
         prefs = getSharedPreferences("auto", MODE_PRIVATE);
         switchAutoFill.setChecked(prefs.getBoolean("enabled", false));
         switchAutoCopy.setChecked(prefs.getBoolean("auto_copy_code", false));
         switchOtpAlerts.setChecked(prefs.getBoolean("otp_detect_enabled", true));
         switchAggressiveSignup.setChecked(prefs.getBoolean("aggressive_signup_autofill", false));
+        switchRetryFailedCodeFill.setChecked(prefs.getBoolean("retry_failed_code_fill", false));
         switchAutoFill.setOnCheckedChangeListener((btn, checked) -> {
             prefs.edit().putBoolean("enabled", checked).apply();
             if (checked) startEmailFetcher(false);
@@ -218,6 +221,10 @@ public class MainActivity extends AppCompatActivity {
         });
         switchAggressiveSignup.setOnCheckedChangeListener((buttonView, checked) -> {
             prefs.edit().putBoolean("aggressive_signup_autofill", checked).apply();
+            updateDashboard();
+        });
+        switchRetryFailedCodeFill.setOnCheckedChangeListener((buttonView, checked) -> {
+            prefs.edit().putBoolean("retry_failed_code_fill", checked).apply();
             updateDashboard();
         });
 
@@ -404,6 +411,9 @@ public class MainActivity extends AppCompatActivity {
         }
         if (switchAggressiveSignup.isChecked() != prefs.getBoolean("aggressive_signup_autofill", false)) {
             switchAggressiveSignup.setChecked(prefs.getBoolean("aggressive_signup_autofill", false));
+        }
+        if (switchRetryFailedCodeFill.isChecked() != prefs.getBoolean("retry_failed_code_fill", false)) {
+            switchRetryFailedCodeFill.setChecked(prefs.getBoolean("retry_failed_code_fill", false));
         }
 
         if (!enabled) {
