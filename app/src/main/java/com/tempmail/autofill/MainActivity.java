@@ -1104,10 +1104,12 @@ public class MainActivity extends AppCompatActivity {
         java.util.List<InboxStorage.InboxEntry> inboxEntries = InboxStorage.getInbox(prefs);
         InboxStorage.InboxEntry bestEntry = findBestToolkitEntry(inboxEntries);
 
+        ScrollView scrollView = new ScrollView(this);
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int padding = dpToPx(20);
         layout.setPadding(padding, padding, padding, padding);
+        scrollView.addView(layout);
 
         TextView subtitle = new TextView(this);
         subtitle.setText(R.string.toolkit_subtitle);
@@ -1137,6 +1139,18 @@ public class MainActivity extends AppCompatActivity {
         actions.setPadding(0, dpToPx(18), 0, 0);
         final AlertDialog[] dialogHolder = new AlertDialog[1];
 
+        actions.addView(createToolkitButton(R.string.button_refresh_mailbox_now, v -> refreshMailboxNow()));
+        actions.addView(createToolkitButton(R.string.button_copy_current_email, v -> copyValue(
+                prefs.getString("latest_email", ""),
+                R.string.toast_copied_email
+        )));
+        actions.addView(createToolkitButton(R.string.button_copy_best_code, v -> copyBestInboxCode(inboxEntries)));
+        actions.addView(createToolkitButton(R.string.button_copy_best_link, v -> copyBestInboxLink(inboxEntries)));
+        actions.addView(createToolkitButton(R.string.button_open_provider_inbox, v -> openProviderBrowser(false)));
+        actions.addView(createToolkitButton(R.string.button_copy_quick_summary, v -> copyValue(
+                buildQuickMailboxSummary(inboxEntries),
+                R.string.toast_summary_copied
+        )));
         actions.addView(createToolkitButton(R.string.button_apply_best, v -> {
             if (!applyBestToolkitEntry(inboxEntries)) {
                 Toast.makeText(this, R.string.toast_toolkit_no_action, Toast.LENGTH_SHORT).show();
@@ -1165,7 +1179,7 @@ public class MainActivity extends AppCompatActivity {
         layout.addView(actions);
         dialogHolder[0] = new AlertDialog.Builder(this)
                 .setTitle(R.string.toolkit_title)
-                .setView(layout)
+                .setView(scrollView)
                 .setPositiveButton(R.string.provider_dialog_cancel, null)
                 .create();
         dialogHolder[0].show();
@@ -1280,8 +1294,91 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+    private InboxStorage.InboxEntry findLatestCodeEntry(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        if (inboxEntries == null) {
+            return null;
+        }
+        for (InboxStorage.InboxEntry entry : inboxEntries) {
+            if (entry != null && entry.hasCode()) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private InboxStorage.InboxEntry findLatestLinkEntry(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        if (inboxEntries == null) {
+            return null;
+        }
+        for (InboxStorage.InboxEntry entry : inboxEntries) {
+            if (entry != null && entry.hasLink()) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private void copyBestInboxCode(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        InboxStorage.InboxEntry codeEntry = findLatestCodeEntry(inboxEntries);
+        String code = codeEntry != null ? codeEntry.code : prefs.getString("latest_code", "");
+        copyValue(code, R.string.toast_copied_code);
+    }
+
+    private void copyBestInboxLink(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        InboxStorage.InboxEntry linkEntry = findLatestLinkEntry(inboxEntries);
+        String link = linkEntry != null ? linkEntry.link : prefs.getString("latest_link", "");
+        copyValue(link, R.string.toast_copied_link);
+    }
+
     private boolean hasCurrentMailbox() {
         return prefs != null && !TextUtils.isEmpty(prefs.getString("latest_email", ""));
+    }
+
+    private void refreshMailboxNow() {
+        if (prefs == null) {
+            return;
+        }
+        prefs.edit()
+                .putBoolean("pending_force_refresh", true)
+                .remove("latest_code")
+                .remove("latest_link")
+                .remove("last_auto_copied_code")
+                .remove("last_notified_code")
+                .remove("last_notified_link")
+                .apply();
+        if (!switchAutoFill.isChecked()) {
+            switchAutoFill.setChecked(true);
+        }
+        startEmailFetcher(true);
+        updateDashboard();
+        Toast.makeText(this, R.string.toast_refresh_started, Toast.LENGTH_SHORT).show();
+    }
+
+    private String buildQuickMailboxSummary(java.util.List<InboxStorage.InboxEntry> inboxEntries) {
+        String email = prefs.getString("latest_email", "");
+        String code = prefs.getString("latest_code", "");
+        String link = prefs.getString("latest_link", "");
+        String provider = resolveProviderDisplay();
+        InboxStorage.InboxEntry codeEntry = findLatestCodeEntry(inboxEntries);
+        InboxStorage.InboxEntry linkEntry = findLatestLinkEntry(inboxEntries);
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("Email: ").append(TextUtils.isEmpty(email) ? "-" : email).append('\n');
+        builder.append("Provider: ").append(TextUtils.isEmpty(provider) ? "-" : provider).append('\n');
+        builder.append("Dashboard code: ").append(TextUtils.isEmpty(code) ? "-" : code).append('\n');
+        builder.append("Best inbox code: ")
+                .append(codeEntry == null || TextUtils.isEmpty(codeEntry.code) ? "-" : codeEntry.code)
+                .append('\n');
+        builder.append("Dashboard link: ").append(TextUtils.isEmpty(link) ? "-" : link).append('\n');
+        builder.append("Best inbox link: ")
+                .append(linkEntry == null || TextUtils.isEmpty(linkEntry.link) ? "-" : linkEntry.link)
+                .append('\n');
+        builder.append(getString(
+                R.string.inbox_meta_format,
+                inboxEntries.size(),
+                countActionableEntries(inboxEntries)
+        ));
+        return builder.toString().trim();
     }
 
     private String buildVerificationPack(java.util.List<InboxStorage.InboxEntry> inboxEntries) {

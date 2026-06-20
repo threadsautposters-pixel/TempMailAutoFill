@@ -62,6 +62,12 @@
     <string name="button_next_provider_browser">Next provider</string>
     <string name="button_share_pack">Share pack</string>
     <string name="button_copy_pack">Copy pack</string>
+    <string name="button_refresh_mailbox_now">Refresh mailbox now</string>
+    <string name="button_copy_current_email">Copy current email</string>
+    <string name="button_copy_best_code">Copy best inbox code</string>
+    <string name="button_copy_best_link">Copy best inbox link</string>
+    <string name="button_open_provider_inbox">Open provider inbox</string>
+    <string name="button_copy_quick_summary">Copy quick summary</string>
     <string name="button_apply_best">Apply best message</string>
     <string name="button_open_best_link">Open best inbox link</string>
     <string name="button_clear_inbox">Clear inbox</string>
@@ -154,6 +160,7 @@
     <string name="toast_inbox_link_applied">Verification link moved to the dashboard.</string>
     <string name="toast_inbox_code_applied">Verification code moved to the dashboard.</string>
     <string name="toast_pack_copied">Verification pack copied.</string>
+    <string name="toast_summary_copied">Quick summary copied.</string>
     <string name="toast_inbox_cleared">Inbox cleared.</string>
     <string name="toast_share_unavailable">No app is available to share the verification pack.</string>
     <string name="toast_toolkit_no_action">No actionable inbox message is available yet.</string>
